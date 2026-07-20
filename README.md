@@ -20,7 +20,7 @@ prompt → agent → adaptateur → trace JSON → assertions YAML → rapport �
 
 ## Prérequis
 
-- Python 3.10 ou supérieur ;
+- Python 3.11 ou supérieur ;
 - Codex CLI pour utiliser l’adaptateur Codex.
 
 ## Installation
