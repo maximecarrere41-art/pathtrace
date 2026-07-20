@@ -1,7 +1,7 @@
 # Pathtrace
 
 [![Tests](https://github.com/maximecarrere41-art/pathtrace/actions/workflows/tests.yml/badge.svg)](https://github.com/maximecarrere41-art/pathtrace/actions/workflows/tests.yml)
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 > Projet en version initiale — support de Codex CLI pour le moment.
