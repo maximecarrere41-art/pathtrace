@@ -1,11 +1,38 @@
 # Pathtrace
 
+[![Tests](https://github.com/maximecarrere41-art/pathtrace/actions/workflows/tests.yml/badge.svg)](https://github.com/maximecarrere41-art/pathtrace/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+> Projet en version initiale — support de Codex CLI pour le moment.
+
 Pathtrace teste **le chemin suivi par un agent IA** : les skills chargées, les outils utilisés, les commandes exécutées et leur ordre.
 
 Il complète les tests classiques : au lieu de vérifier uniquement la réponse finale, il vérifie aussi **comment l’agent y est arrivé**.
 
 ```text
 prompt → agent → adaptateur → trace JSON → assertions YAML → rapport → graphe HTML
+```
+
+## Aperçu
+
+![Exemple d’une trace Pathtrace](docs/images/pathtrace-demo.png)
+
+## Prérequis
+
+- Python 3.10 ou supérieur ;
+- Codex CLI pour utiliser l’adaptateur Codex.
+
+## Installation
+
+```bash
+python -m pip install -e .
+```
+
+Pour contribuer au projet :
+
+```bash
+python -m pip install -e ".[dev]"
 ```
 
 ## Deux façons de l’utiliser
@@ -15,7 +42,6 @@ prompt → agent → adaptateur → trace JSON → assertions YAML → rapport �
 À choisir pour explorer un agent, comprendre une exécution réelle ou vérifier ponctuellement un tour déjà lancé par un humain.
 
 ```bash
-python -m pip install -e .
 pathtrace install --framework codex
 codex
 pathtrace test --latest --tests pathtrace.yaml --report --graph
@@ -25,7 +51,7 @@ Dans ce mode, **Pathtrace ne lance pas le prompt**. Il écoute les hooks de l’
 
 ### 2. Lancer une campagne automatisée
 
-À choisir pour la non-régression, la CI ou l’exécution de nombreux prompts et fichiers YAML.
+À choisir pour la non-régression, la CI ou l’exécution de plusieurs prompts et scénarios YAML.
 
 ```bash
 pathtrace run --tests tests/scenarios/ --framework codex --report --graph
@@ -39,7 +65,7 @@ Dans ce mode, Pathtrace :
 4. écrit les rapports et graphes ;
 5. passe au scénario suivant.
 
-## Exemple de trace lisible
+## Exemple de trace
 
 ```json
 {
@@ -68,9 +94,11 @@ Dans ce mode, Pathtrace :
 }
 ```
 
-Le cœur ne connaît aucun nom de skill, commande ou outil. Chaque adaptateur traduit les événements natifs vers ce petit modèle commun.
+Le cœur ne connaît aucun nom de skill, commande ou outil. Chaque adaptateur traduit les événements natifs vers un modèle commun.
 
-## YAML manuel
+## Assertions YAML
+
+### Session manuelle
 
 ```yaml
 version: 1
@@ -84,10 +112,10 @@ tests:
       - type: must_include
         event: tool_call:Bash
         where:
-          command: '*pytest*'
+          command: "*pytest*"
 ```
 
-## YAML automatisé
+### Campagne automatisée
 
 ```yaml
 version: 1
@@ -106,7 +134,7 @@ scenarios:
       - type: must_include
         event: tool_call:Bash
         where:
-          command: '*pytest*'
+          command: "*pytest*"
 
   - name: vérification de sécurité
     prompt: Analyse les changements et vérifie qu’aucune commande destructive n’est utilisée.
@@ -117,12 +145,12 @@ Un scénario utilise soit `assertions` directement, soit `tests_file` pour réut
 
 ## Architecture extensible
 
-Deux abstractions sont volontairement séparées :
+Deux abstractions sont séparées :
 
 - `FrameworkAdapter` observe les événements natifs et produit une trace commune ;
 - `AgentRunner` lance un prompt en mode non interactif.
 
-Pour ajouter Claude Code demain, il suffira d’ajouter `ClaudeCodeAdapter` et `ClaudeCodeRunner`. Le moteur YAML, le rapport et le graphe ne changent pas.
+Pour ajouter un autre agent, il suffit d’implémenter son adaptateur et son runner. Le moteur YAML, les rapports et les graphes restent inchangés.
 
 ## Documentation
 
@@ -136,10 +164,19 @@ Pour ajouter Claude Code demain, il suffira d’ajouter `ClaudeCodeAdapter` et `
 ## Développement
 
 ```bash
-python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
+## Feuille de route
+
+- export OpenTelemetry ;
+- prise en charge de nouveaux agents et frameworks ;
+- amélioration des rapports et exemples publics.
+
+## Auteur
+
+Créé et maintenu par [Maxime Carrere](https://github.com/maximecarrere41-art).
+
 ## Licence
 
-MIT — voir [LICENSE](LICENSE).
+Distribué sous licence MIT. Voir [LICENSE](LICENSE).
