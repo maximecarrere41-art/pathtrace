@@ -1,0 +1,12 @@
+{
+  "prompt": "Summarize an issue",
+  "model": "gpt-5-codex",
+  "framework": "codex",
+  "session_id": "trace-1",
+  "tools": [
+    {
+      "type": "tool_call",
+      "name": "start"
+    }
+  ]
+}

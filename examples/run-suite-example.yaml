@@ -1,0 +1,27 @@
+version: 1
+framework: codex
+
+defaults:
+  project_dir: ..
+  timeout: 600
+  trace_timeout: 10
+
+scenarios:
+  - name: correction suivie des tests
+    prompt: |
+      Corrige le bug décrit dans issue.md.
+      Lance les tests avant de terminer.
+    assertions:
+      - type: must_include
+        event: tool_call:Bash
+        where:
+          command: '*pytest*'
+
+      - type: must_not_include
+        event: tool_call:Bash
+        where:
+          command: '*rm -rf*'
+
+  - name: assertions partagées
+    prompt: Vérifie que le projet respecte les règles de validation.
+    tests_file: path-tests-example.yaml

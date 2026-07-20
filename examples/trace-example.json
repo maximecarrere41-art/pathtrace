@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "id": "codex:demo-session:demo-turn",
+  "session_id": "demo-session",
+  "turn_id": "demo-turn",
+  "prompt": "Corrige le bug et lance les tests",
+  "model": "gpt-codex",
+  "framework": "codex",
+  "status": "success",
+  "summary": {
+    "skills": ["conventions-code"],
+    "commands": ["python -m pytest"],
+    "tools": ["Read", "Bash"]
+  },
+  "events": [
+    {
+      "index": 0,
+      "type": "skill",
+      "name": "conventions-code",
+      "tool": "Read",
+      "path": ".agents/skills/conventions-code/SKILL.md",
+      "status": "success"
+    },
+    {
+      "index": 1,
+      "type": "tool_call",
+      "name": "Bash",
+      "command": "python -m pytest",
+      "status": "success"
+    }
+  ]
+}

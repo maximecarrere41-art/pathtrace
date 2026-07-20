@@ -1,0 +1,13 @@
+version: 1
+framework: codex
+
+tests:
+  - name: "invalid: min field on max_occurrences"
+    task: "fixture de test uniquement, ne représente pas une vraie tâche"
+
+    assertions:
+      - type: max_occurrences
+        event: "delegation:*"
+        max: 1
+        min: 0
+        reason: "invalide volontairement : min n'appartient pas à max_occurrences"

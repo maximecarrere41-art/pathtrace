@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PathtraceTrace",
+  "description": "Format canonique v3, indépendant du framework agentique.",
+  "type": "object",
+  "required": ["version", "id", "session_id", "turn_id", "prompt", "model", "framework", "status", "summary", "events"],
+  "properties": {
+    "version": {"const": 3},
+    "id": {"type": "string"},
+    "session_id": {"type": "string"},
+    "turn_id": {"type": "string"},
+    "prompt": {"type": "string"},
+    "model": {"type": "string"},
+    "framework": {"type": "string"},
+    "status": {"type": "string", "enum": ["success", "failure", "partial", "timeout", "unknown"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "ended_at": {"type": "string", "format": "date-time"},
+    "summary": {
+      "type": "object",
+      "required": ["skills", "commands", "tools"],
+      "properties": {
+        "skills": {"type": "array", "items": {"type": "string"}},
+        "commands": {"type": "array", "items": {"type": "string"}},
+        "tools": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/event"}
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": ["index", "type", "name"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "type": {"type": "string", "enum": ["tool_call", "skill"]},
+        "name": {"type": "string"},
+        "tool": {"type": "string"},
+        "command": {"type": "string"},
+        "path": {"type": "string"},
+        "input": {"type": "object"},
+        "output_summary": {"type": "string"},
+        "status": {"type": "string", "enum": ["running", "success", "failure", "unknown"]},
+        "raw": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

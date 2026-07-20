@@ -1,0 +1,29 @@
+version: 1
+
+tests:
+  - name: "la modification est validée"
+    assertions:
+      - type: must_include
+        event: "skill:conventions-code"
+        reason: "la skill de conventions doit être utilisée"
+
+      - type: must_include
+        event: "tool_call:Bash"
+        where:
+          command: "*pytest*"
+        reason: "les tests doivent être lancés"
+
+      - type: must_not_include
+        event: "tool_call:Bash"
+        where:
+          command: "*rm -rf*"
+
+      - type: path_matches
+        sequence:
+          - "skill:conventions-code"
+          - event: "tool_call:Bash"
+            where:
+              command: "*pytest*"
+
+      - type: status_equals
+        value: success

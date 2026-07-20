@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pathtrace.dev/schema/run-suite-schema.json",
+  "title": "Pathtrace automated run suite",
+  "type": "object",
+  "required": ["version", "scenarios"],
+  "properties": {
+    "version": {"const": 1},
+    "framework": {"type": "string", "minLength": 1},
+    "project_dir": {"type": "string"},
+    "timeout": {"type": "number", "exclusiveMinimum": 0},
+    "trace_timeout": {"type": "number", "exclusiveMinimum": 0},
+    "executable": {"type": "string"},
+    "runner_args": {"type": "array", "items": {"type": "string"}},
+    "defaults": {"$ref": "#/$defs/runOptions"},
+    "scenarios": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/scenario"}
+    }
+  },
+  "$defs": {
+    "runOptions": {
+      "type": "object",
+      "properties": {
+        "framework": {"type": "string", "minLength": 1},
+        "project_dir": {"type": "string"},
+        "timeout": {"type": "number", "exclusiveMinimum": 0},
+        "trace_timeout": {"type": "number", "exclusiveMinimum": 0},
+        "executable": {"type": "string"},
+        "runner_args": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "scenario": {
+      "allOf": [
+        {"$ref": "#/$defs/runOptions"},
+        {
+          "type": "object",
+          "required": ["name", "prompt"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "prompt": {"type": "string", "minLength": 1},
+            "assertions": {"type": "array", "items": {"type": "object"}},
+            "tests_file": {"type": "string"}
+          },
+          "oneOf": [
+            {"required": ["assertions"], "not": {"required": ["tests_file"]}},
+            {"required": ["tests_file"], "not": {"required": ["assertions"]}}
+          ]
+        }
+      ]
+    }
+  }
+}
