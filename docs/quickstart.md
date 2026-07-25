@@ -20,31 +20,51 @@ python -m pytest
 | Observer une session lancée manuellement | `pathtrace test` | Idéal pour explorer, déboguer et comprendre un tour réel. |
 | Lancer plusieurs prompts automatiquement | `pathtrace run` | Idéal pour la non-régression, la CI et les campagnes en volume. |
 
-Les deux chemins produisent la même trace v3 et utilisent le même moteur d’assertions.
+Les deux chemins produisent la même trace v3 et utilisent le même moteur d’assertions, avec Codex CLI comme avec Claude Code.
 
 # Chemin 1 — observation manuelle
 
 ## 1. Installer les hooks
 
+### Codex CLI
+
 ```bash
 pathtrace install --framework codex
 ```
 
-La commande fusionne les hooks dans `.codex/hooks.json` sans supprimer la configuration existante.
+La commande fusionne les hooks dans le répertoire global Codex, généralement `~/.codex/hooks.json`, sans supprimer la configuration existante.
 
-## 2. Utiliser Codex normalement
+### Claude Code
+
+```bash
+pathtrace install --framework claude-code
+```
+
+La commande fusionne les hooks dans `~/.claude/settings.json` sans supprimer les hooks déjà présents. Si `CLAUDE_CONFIG_DIR` est défini, ce répertoire est utilisé à la place de `~/.claude`.
+
+## 2. Utiliser l’agent normalement
+
+### Codex CLI
 
 ```bash
 codex
 ```
 
+### Claude Code
+
+```bash
+claude
+```
+
 Pathtrace ne lance pas le prompt dans ce chemin. Les hooks produisent une trace par tour :
 
 ```text
-.pathtrace/traces/codex/<session_id>/<turn_id>.json
+.pathtrace/traces/<framework>/<session_id>/<turn_id>.json
 ```
 
 ## 3. Déclarer le chemin attendu
+
+Le même fichier d’assertions peut être utilisé avec les deux agents :
 
 ```yaml
 version: 1
@@ -66,7 +86,7 @@ tests:
 pathtrace test --latest --tests pathtrace.yaml --report --graph
 ```
 
-Ou avec une trace précise :
+Avec une trace Codex précise :
 
 ```bash
 pathtrace test \
@@ -76,13 +96,46 @@ pathtrace test \
   --graph
 ```
 
+Avec une trace Claude Code précise :
+
+```bash
+pathtrace test \
+  --trace .pathtrace/traces/claude-code/session-1/turn-2.json \
+  --tests pathtrace.yaml \
+  --report \
+  --graph
+```
+
 # Chemin 2 — campagne automatisée
 
 ## 1. Écrire une suite de scénarios
 
+### Codex CLI
+
 ```yaml
 version: 1
 framework: codex
+
+defaults:
+  project_dir: ..
+  timeout: 600
+  trace_timeout: 10
+
+scenarios:
+  - name: lancer les tests
+    prompt: Corrige le problème puis lance les tests.
+    assertions:
+      - type: must_include
+        event: tool_call:Bash
+        where:
+          command: '*pytest*'
+```
+
+### Claude Code
+
+```yaml
+version: 1
+framework: claude-code
 
 defaults:
   project_dir: ..
@@ -117,7 +170,13 @@ Un motif :
 pathtrace run --tests 'tests/**/*.scenario.yaml' --report --graph
 ```
 
-Le runner lance chaque prompt séquentiellement. L’adaptateur capture ensuite le chemin réellement suivi.
+### Avec Codex CLI
+
+`pathtrace run` installe ou complète automatiquement les hooks Codex avant chaque scénario, puis lance le prompt avec `codex exec`. Il n’est pas nécessaire d’exécuter `pathtrace install` au préalable.
+
+### Avec Claude Code
+
+`pathtrace run` fusionne automatiquement les hooks Claude Code dans `~/.claude/settings.json`, puis lance le prompt avec `claude -p`. Il n’est pas nécessaire d’exécuter `pathtrace install` ni de modifier `settings.json` à la main.
 
 ## 3. Lire les sorties
 

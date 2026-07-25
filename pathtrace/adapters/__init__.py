@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathtrace.adapters.base import FrameworkAdapter
+from pathtrace.adapters.claude_code import ClaudeCodeAdapter
 from pathtrace.adapters.codex import CodexAdapter
 
 
 _ADAPTERS: dict[str, FrameworkAdapter] = {
+    "claude-code": ClaudeCodeAdapter(),
     "codex": CodexAdapter(),
 }
 

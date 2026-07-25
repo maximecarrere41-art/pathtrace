@@ -6,7 +6,23 @@ Une campagne automatise la boucle complète :
 prompt → runner → agent → hooks → adaptateur → trace → assertions → rapport → graphe
 ```
 
+## Installation automatique des hooks
+
+### Codex CLI
+
+Avant chaque scénario `codex`, `pathtrace run` installe ou complète les hooks Codex, puis lance le prompt avec `codex exec`. La configuration existante est conservée et les entrées Pathtrace ne sont pas dupliquées.
+
+Il n’est donc pas nécessaire d’exécuter `pathtrace install --framework codex` avant une campagne automatisée.
+
+### Claude Code
+
+Avant chaque scénario `claude-code`, `pathtrace run` fusionne les hooks Claude Code dans `~/.claude/settings.json`, puis lance le prompt avec `claude -p`. La configuration existante est conservée et les entrées Pathtrace ne sont pas dupliquées.
+
+Il ne faut donc ni exécuter `pathtrace install --framework claude-code` au préalable, ni modifier `settings.json` à la main.
+
 ## Format minimal
+
+### Codex CLI
 
 ```yaml
 version: 1
@@ -22,6 +38,24 @@ scenarios:
           command: '*test*'
 ```
 
+### Claude Code
+
+```yaml
+version: 1
+framework: claude-code
+
+scenarios:
+  - name: validation
+    prompt: Lance les tests du projet.
+    assertions:
+      - type: must_include
+        event: tool_call:Bash
+        where:
+          command: '*test*'
+```
+
+Le reste du format de campagne est commun aux deux frameworks.
+
 ## Réutiliser un fichier d’assertions
 
 Pour éviter de dupliquer les règles :
@@ -35,7 +69,8 @@ scenarios:
     prompt: Corrige le bug A puis valide le projet.
     tests_file: assertions/validation.yaml
 
-  - name: scénario B
+  - name: scénario B avec Claude Code
+    framework: claude-code
     prompt: Corrige le bug B puis valide le projet.
     tests_file: assertions/validation.yaml
 ```
@@ -61,7 +96,7 @@ Un scénario doit contenir exactement une source : `assertions` ou `tests_file`.
 | Propriété | Rôle |
 |---|---|
 | `version` | Version du format de campagne. Actuellement `1`. |
-| `framework` | Runner et adaptateur utilisés par défaut. |
+| `framework` | Runner et adaptateur utilisés par défaut : `codex` ou `claude-code`. |
 | `defaults` | Valeurs partagées par les scénarios. |
 | `scenarios` | Liste ordonnée des prompts à exécuter. |
 
@@ -90,7 +125,7 @@ La priorité est :
 options CLI → scénario → defaults → suite → valeur Pathtrace
 ```
 
-Exemple :
+### Exemple Codex CLI
 
 ```bash
 pathtrace run \
@@ -99,6 +134,20 @@ pathtrace run \
   --project-dir . \
   --timeout 900 \
   --runner-arg=--skip-git-repo-check \
+  --report \
+  --graph
+```
+
+### Exemple Claude Code
+
+```bash
+pathtrace run \
+  --tests tests/scenarios/ \
+  --framework claude-code \
+  --project-dir . \
+  --timeout 900 \
+  --runner-arg=--model \
+  --runner-arg=sonnet \
   --report \
   --graph
 ```
