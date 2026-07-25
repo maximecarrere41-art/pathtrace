@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathtrace.runners.base import AgentRunner
+from pathtrace.runners.claude_code import ClaudeCodeRunner
 from pathtrace.runners.codex import CodexRunner
 
 
 _RUNNERS: dict[str, AgentRunner] = {
+    "claude-code": ClaudeCodeRunner(),
     "codex": CodexRunner(),
 }
 

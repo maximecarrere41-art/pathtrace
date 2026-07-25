@@ -1,6 +1,6 @@
 # Ajouter un nouvel agent
 
-Une intégration complète contient généralement deux petites classes indépendantes.
+Une intégration complète contient généralement deux petites classes indépendantes. Codex et Claude Code peuvent servir de références concrètes.
 
 ## 1. Ajouter l’adaptateur
 
@@ -13,8 +13,8 @@ from typing import Any
 from pathtrace.adapters.base import FrameworkAdapter
 
 
-class ClaudeCodeAdapter(FrameworkAdapter):
-    name = "claude-code"
+class FutureAgentAdapter(FrameworkAdapter):
+    name = "future-agent"
 
     def install(self, project_dir: Path) -> Path:
         ...
@@ -31,7 +31,7 @@ class ClaudeCodeAdapter(FrameworkAdapter):
 L’ajouter au registre `pathtrace/adapters/__init__.py` rend disponible :
 
 ```bash
-pathtrace install --framework claude-code
+pathtrace install --framework future-agent
 ```
 
 ## 2. Ajouter le runner
@@ -42,8 +42,8 @@ Le runner lance l’agent en mode non interactif.
 from pathtrace.runners.base import AgentRunner, RunRequest, RunResult
 
 
-class ClaudeCodeRunner(AgentRunner):
-    name = "claude-code"
+class FutureAgentRunner(AgentRunner):
+    name = "future-agent"
 
     def run(self, request: RunRequest) -> RunResult:
         ...
@@ -52,7 +52,7 @@ class ClaudeCodeRunner(AgentRunner):
 L’ajouter au registre `pathtrace/runners/__init__.py` rend disponible :
 
 ```bash
-pathtrace run --framework claude-code --tests tests/scenarios/
+pathtrace run --framework future-agent --tests tests/scenarios/
 ```
 
 ## Règles de traduction
