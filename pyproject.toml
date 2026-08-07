@@ -16,6 +16,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+security = [
+    "opentelemetry-sdk>=1.39",
+    "opentelemetry-exporter-otlp-proto-http>=1.39",
+]
 
 [project.scripts]
 pathtrace = "pathtrace.cli:cli"

@@ -66,6 +66,13 @@ pathtrace test --latest --tests pathtrace.yaml --report --graph
 | `Stop` | Finalise une trace réussie. |
 | `StopFailure` | Finalise une trace en échec. |
 
+En activation `security`, seul `PreToolUse` est installé. Claude Code sait
+traduire les trois décisions communes avec `allow`, `deny` et `ask`. Pathtrace
+utilise donc `ask` pour `REQUIRE_APPROVAL`, sans construire de workflow
+interactif parallèle.
+
+Voir [Runtime Security et audit des décisions](security.md).
+
 `tool_use_id` corrèle les événements avant/après afin qu’un appel ne soit présent qu’une fois dans la trace.
 
 ## Propriétés traduites

@@ -12,6 +12,15 @@ from pathtrace.adapters import available_adapters, get_adapter
 from pathtrace.adapters.base import AdapterInstallError
 from pathtrace.campaign import CampaignError, execute_run_suite, format_campaign
 from pathtrace.capture import safe_fragment
+from pathtrace.config import (
+    CONFIG_PATH,
+    Feature,
+    InstallTarget,
+    ProjectConfigError,
+    load_project_config,
+    prepare_activation,
+    write_project_config,
+)
 from pathtrace.engine.evaluator import evaluate_test_suite
 from pathtrace.engine.loader import (
     PathtraceLoaderError,
@@ -21,25 +30,77 @@ from pathtrace.engine.loader import (
     load_trace,
 )
 from pathtrace.engine.report import build_report, format_report, write_json_report
+from pathtrace.hooks.pipeline import process_hook
 from pathtrace.runners import available_runners
 from pathtrace.visualization.html_graph import write_html_graph
 
 
 @click.group()
 def cli() -> None:
-    """Teste le chemin d'orchestration suivi par un agent IA."""
+    """Observe, teste et contrôle le chemin suivi par un agent IA."""
 
 
 @cli.command("install")
+@click.argument(
+    "target",
+    required=False,
+    default=InstallTarget.OBSERVE.value,
+    type=click.Choice([target.value for target in InstallTarget]),
+)
 @click.option("--framework", type=click.Choice(available_adapters()), required=True)
-def install_command(framework: str) -> None:
-    """Installe la capture passive du framework choisi."""
+def install_command(target: str, framework: str) -> None:
+    """Active Observe, Security ou les deux pour le framework choisi."""
     try:
-        config_path = get_adapter(framework).install(Path.cwd())
-    except (ValueError, AdapterInstallError) as error:
+        project_dir = Path.cwd()
+        config = prepare_activation(project_dir, InstallTarget(target), framework)
+        framework_features = config.features_for(framework)
+        hook_path = get_adapter(framework).install(project_dir, framework_features)
+        config_path = write_project_config(project_dir, config)
+    except (ValueError, AdapterInstallError, ProjectConfigError) as error:
         raise click.ClickException(str(error)) from error
-    click.echo(f"Capture {framework} installée : {config_path}")
-    click.echo("Les traces seront écrites dans .pathtrace/traces/")
+    enabled = ", ".join(
+        feature.value
+        for feature in sorted(framework_features, key=lambda item: item.value)
+    )
+    click.echo(f"Pathtrace {framework} activé ({enabled}) : {hook_path}")
+    click.echo(f"Configuration locale : {config_path}")
+    if Feature.OBSERVE in config.features:
+        click.echo("Les traces Observe seront écrites dans .pathtrace/traces/")
+
+
+@cli.command("status")
+def status_command() -> None:
+    """Affiche les capacités activées dans le repository courant."""
+    try:
+        config = load_project_config(Path.cwd())
+    except ProjectConfigError as error:
+        raise click.ClickException(str(error)) from error
+    features = ", ".join(
+        feature.value
+        for feature in sorted(config.features, key=lambda item: item.value)
+    )
+    click.echo(f"Features: {features}")
+    location = Path.cwd() / CONFIG_PATH if config.explicit else "legacy defaults"
+    click.echo(f"Configuration: {location}")
+    if config.frameworks:
+        for framework, enabled in sorted(config.frameworks.items()):
+            names = ", ".join(
+                feature.value for feature in sorted(enabled, key=lambda item: item.value)
+            )
+            click.echo(f"Framework {framework}: {names}")
+    if Feature.SECURITY in config.features:
+        security = config.security or {}
+        telemetry = security.get("telemetry")
+        telemetry_enabled = (
+            isinstance(telemetry, dict) and telemetry.get("enabled") is True
+        )
+        click.echo(f"Security mode: {security.get('mode', 'enforce')}")
+        endpoint = telemetry.get("otlp_endpoint") if isinstance(telemetry, dict) else None
+        if telemetry_enabled and not endpoint:
+            telemetry_status = "enabled (inactive: missing OTLP endpoint)"
+        else:
+            telemetry_status = "enabled" if telemetry_enabled else "disabled"
+        click.echo(f"Security telemetry: {telemetry_status}")
 
 
 @cli.group("hook")
@@ -50,8 +111,20 @@ def hook_group() -> None:
 @hook_group.command("receive", hidden=True)
 @click.argument("framework")
 @click.argument("event_slug")
-def receive_hook_command(framework: str, event_slug: str) -> None:
-    _handle_hook(framework, event_slug)
+@click.option("--configured-only", is_flag=True, hidden=True)
+@click.option("--security-enabled", is_flag=True, hidden=True)
+def receive_hook_command(
+    framework: str,
+    event_slug: str,
+    configured_only: bool,
+    security_enabled: bool,
+) -> None:
+    _handle_hook(
+        framework,
+        event_slug,
+        configured_only=configured_only,
+        security_enabled=security_enabled,
+    )
 
 
 @hook_group.command("codex", hidden=True)
@@ -61,16 +134,31 @@ def legacy_codex_hook_command(event_slug: str) -> None:
     _handle_hook("codex", event_slug)
 
 
-def _handle_hook(framework: str, event_slug: str) -> None:
+def _handle_hook(
+    framework: str,
+    event_slug: str,
+    *,
+    configured_only: bool = False,
+    security_enabled: bool = False,
+) -> None:
     try:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError:
         payload = {}
     try:
-        output = get_adapter(framework).handle(event_slug, payload, Path.cwd())
+        result = process_hook(
+            get_adapter(framework),
+            event_slug,
+            payload,
+            Path.cwd(),
+            configured_only=configured_only,
+            security_installed=security_enabled,
+        )
     except ValueError as error:
         raise click.ClickException(str(error)) from error
-    if output is not None:
+    if result.response is not None:
+        click.echo(json.dumps(result.response))
+    elif result.trace_path is not None:
         click.echo(json.dumps({}))
 
 

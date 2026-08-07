@@ -93,6 +93,14 @@ pathtrace run --tests .pathtrace\tests\scenarios.yaml --report --graph
 | `PostToolUse` | Complète le même appel avec son statut et sa sortie. |
 | `Stop` | Finalise et écrit la trace du tour. |
 
+En activation `security`, seul `PreToolUse` est nécessaire. Pathtrace peut y
+retourner `deny` pour bloquer une action. La valeur `ask` n'est actuellement
+pas supportée par le hook Codex : `REQUIRE_APPROVAL` est donc bloqué
+explicitement en mode enforce. Pathtrace ne retourne pas `allow`, afin de
+conserver les permissions natives de Codex.
+
+Voir [Runtime Security et audit des décisions](security.md).
+
 `PreToolUse` et `PostToolUse` sont reliés par `tool_use_id` ou `call_id` lorsqu’il est disponible. Un appel n’est donc compté qu’une fois.
 
 ## Propriétés Codex interceptées

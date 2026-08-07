@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from pathtrace.adapters import get_adapter
+from pathtrace.config import InstallTarget, prepare_activation, write_project_config
 from pathtrace.capture import safe_fragment
 from pathtrace.engine.evaluator import evaluate_test_suite
 from pathtrace.engine.loader import load_run_suite, load_trace, scenario_test_suite
@@ -137,7 +138,9 @@ def _execute_scenario(
     runner_args = configured_args + tuple(runner_args_override)
 
     try:
-        get_adapter(framework).install(project_dir)
+        config = prepare_activation(project_dir, InstallTarget.OBSERVE, framework)
+        get_adapter(framework).install(project_dir, config.features_for(framework))
+        write_project_config(project_dir, config)
         run_result = get_runner(framework).run(
             RunRequest(
                 prompt=prompt,
