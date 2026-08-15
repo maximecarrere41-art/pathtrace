@@ -90,12 +90,16 @@ pathtrace uninstall --framework codex
 pathtrace uninstall --framework claude-code
 ```
 
-`uninstall` retire uniquement les hooks gérés par Pathtrace et conserve les
-hooks ainsi que les autres réglages utilisateur du fournisseur. La commande
-retire aussi le framework de `.pathtrace/config.yaml` et recalcule l’union
-`features` à partir des autres frameworks encore actifs. Si aucun framework
-ne reste, seul `config.yaml` est supprimé ; les traces, rapports, graphes et
-campagnes historiques sous `.pathtrace/` sont conservés.
+`uninstall` retire les hooks Pathtrace globaux de la machine pour le framework
+choisi : Codex dans `~/.codex/hooks.json` (ou `CODEX_HOME`) et Claude Code dans
+`~/.claude/settings.json` (ou `CLAUDE_CONFIG_DIR`). Cette suppression affecte
+donc tous les projets locaux qui utilisent Pathtrace avec ce framework. Les
+hooks et réglages utilisateur non gérés par Pathtrace sont conservés.
+
+La commande met aussi à jour le `.pathtrace/config.yaml` du projet courant et
+recalcule l’union `features` à partir des autres frameworks encore actifs. Si
+aucun framework ne reste, seul `config.yaml` est supprimé ; les traces,
+rapports, graphes et campagnes historiques sous `.pathtrace/` sont conservés.
 
 ### 2. Lancer une campagne automatisée
 

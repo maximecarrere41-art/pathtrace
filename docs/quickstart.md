@@ -49,17 +49,21 @@ pathtrace uninstall --framework codex
 pathtrace uninstall --framework claude-code
 ```
 
-La commande retire uniquement les hooks créés par Pathtrace, y compris leurs
-variantes internes, et conserve tous les hooks et réglages utilisateur. Elle
-peut être relancée sans erreur si les hooks sont déjà absents ou partiellement
+Ces commandes retirent les hooks Pathtrace globaux de la machine : Codex dans
+`~/.codex/hooks.json` (ou `CODEX_HOME`) et Claude Code dans
+`~/.claude/settings.json` (ou `CLAUDE_CONFIG_DIR`). Elles affectent donc tous
+les projets locaux qui utilisent Pathtrace avec le framework désinstallé.
+Seuls les hooks gérés par Pathtrace, y compris leurs variantes internes, sont
+retirés ; les hooks et réglages utilisateur sont conservés. La commande peut
+être relancée sans erreur si les hooks sont déjà absents ou partiellement
 retirés.
 
-La configuration `.pathtrace/config.yaml` est mise à jour pour oublier le
-framework choisi. Si plusieurs frameworks sont activés, les autres restent
-configurés et `features` est recalculé comme leur union. Après la
-désinstallation du dernier framework, seul `config.yaml` est supprimé : les
-traces, rapports, graphes et campagnes historiques ne sont jamais supprimés
-automatiquement.
+Seule la configuration `.pathtrace/config.yaml` du projet courant est mise à
+jour pour oublier le framework choisi. Si plusieurs frameworks sont activés,
+les autres restent configurés et `features` est recalculé comme leur union.
+Après la désinstallation du dernier framework, seul `config.yaml` est
+supprimé : les traces, rapports, graphes et campagnes historiques ne sont
+jamais supprimés automatiquement.
 
 ## 2. Utiliser l’agent normalement
 
