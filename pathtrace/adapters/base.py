@@ -28,6 +28,10 @@ class FrameworkAdapter(ABC):
         """Installe les hooks nécessaires aux capacités demandées."""
 
     @abstractmethod
+    def uninstall(self, project_dir: Path) -> Path:
+        """Retire les hooks gérés par Pathtrace sans toucher aux hooks utilisateur."""
+
+    @abstractmethod
     def handle(
         self,
         event_slug: str,

@@ -138,6 +138,39 @@ def prepare_activation(
     )
 
 
+def prepare_deactivation(
+    project_dir: Path,
+    framework: str,
+) -> ProjectConfig | None:
+    """Retire un framework et recalcule l'activation locale restante."""
+    current = load_project_config(project_dir)
+    if not current.explicit or current.frameworks is None:
+        return None
+    if framework not in current.frameworks:
+        return current
+    frameworks = dict(current.frameworks)
+    frameworks.pop(framework)
+    if not frameworks:
+        return None
+    features = frozenset(
+        feature
+        for framework_features in frameworks.values()
+        for feature in framework_features
+    )
+    return ProjectConfig(
+        features=features,
+        security=current.security if Feature.SECURITY in features else None,
+        frameworks=frameworks,
+    )
+
+
+def remove_project_config(project_dir: Path) -> Path:
+    """Supprime uniquement la configuration locale Pathtrace si elle existe."""
+    path = project_dir / CONFIG_PATH
+    path.unlink(missing_ok=True)
+    return path
+
+
 def write_project_config(project_dir: Path, config: ProjectConfig) -> Path:
     """Écrit la configuration seulement lorsque son contenu change."""
     path = project_dir / CONFIG_PATH

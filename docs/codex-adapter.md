@@ -103,6 +103,24 @@ Voir [Runtime Security et audit des décisions](security.md).
 
 `PreToolUse` et `PostToolUse` sont reliés par `tool_use_id` ou `call_id` lorsqu’il est disponible. Un appel n’est donc compté qu’une fois.
 
+## Désinstallation
+
+```bash
+pathtrace uninstall --framework codex
+```
+
+La commande retire de `~/.codex/hooks.json` uniquement les commandes de hooks
+gérées par Pathtrace, y compris les variantes internes utilisant
+`--configured-only` ou `--security-enabled`. Les hooks et les autres réglages
+Codex de l’utilisateur sont conservés, et une seconde désinstallation est sans
+effet.
+
+Pathtrace retire également `codex` de `.pathtrace/config.yaml`. Les autres
+frameworks restent actifs et l’union `features` est recalculée. Si `codex`
+était le dernier framework, seul le fichier de configuration locale est
+supprimé ; les traces, rapports, graphes et campagnes historiques sont
+conservés.
+
 ## Propriétés Codex interceptées
 
 | Propriété native | Utilisation Pathtrace |

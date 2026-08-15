@@ -88,6 +88,29 @@ class CodexAdapter(FrameworkAdapter):
         )
         return config_path
 
+    def uninstall(self, project_dir: Path) -> Path:
+        """Retire uniquement les hooks Pathtrace de la configuration Codex."""
+        config_path = _codex_home() / "hooks.json"
+        if not config_path.is_file():
+            return config_path
+        config = _read_existing_config(config_path)
+        hooks = config.get("hooks")
+        if hooks is None:
+            return config_path
+        if not isinstance(hooks, dict):
+            raise PathtraceHookConfigError(
+                f"{config_path} contient une propriété hooks qui n'est pas un objet JSON"
+            )
+        if not _remove_managed_hooks(hooks, config_path):
+            return config_path
+        if not hooks:
+            config.pop("hooks")
+        config_path.write_text(
+            json.dumps(config, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return config_path
+
     def handle(
         self,
         event_slug: str,
@@ -203,6 +226,56 @@ def _ensure_entry(
                 hook["command"] = " ".join((base_command, *merged_flags))
                 return
     entries.append({"matcher": "*", "hooks": [{"type": "command", "command": command}]})
+
+
+def _remove_managed_hooks(hooks: dict[str, Any], config_path: Path) -> bool:
+    changed = False
+    for event_name in MANAGED_EVENTS:
+        entries = hooks.get(event_name)
+        if entries is None:
+            continue
+        if not isinstance(entries, list):
+            raise PathtraceHookConfigError(
+                f"{config_path} contient hooks.{event_name} qui n'est pas une liste"
+            )
+        remaining_entries = []
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+                remaining_entries.append(entry)
+                continue
+            remaining_hooks = [
+                hook
+                for hook in entry["hooks"]
+                if not _is_managed_hook(hook, event_name)
+            ]
+            if len(remaining_hooks) == len(entry["hooks"]):
+                remaining_entries.append(entry)
+                continue
+            changed = True
+            if remaining_hooks:
+                updated_entry = dict(entry)
+                updated_entry["hooks"] = remaining_hooks
+                remaining_entries.append(updated_entry)
+        if remaining_entries:
+            hooks[event_name] = remaining_entries
+        elif event_name in hooks:
+            hooks.pop(event_name)
+    return changed
+
+
+def _is_managed_hook(hook: Any, event_name: str) -> bool:
+    if not isinstance(hook, dict):
+        return False
+    command = hook.get("command")
+    if not isinstance(command, str):
+        return False
+    base_parts = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}".split()
+    command_parts = command.split()
+    flags = command_parts[len(base_parts) :]
+    return (
+        command_parts[: len(base_parts)] == base_parts
+        and all(flag in {"--configured-only", "--security-enabled"} for flag in flags)
+    )
 
 
 def _to_event(payload: dict[str, Any], hook: str) -> dict[str, Any] | None:

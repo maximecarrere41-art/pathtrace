@@ -19,6 +19,8 @@ from pathtrace.config import (
     ProjectConfigError,
     load_project_config,
     prepare_activation,
+    prepare_deactivation,
+    remove_project_config,
     write_project_config,
 )
 from pathtrace.engine.evaluator import evaluate_test_suite
@@ -66,6 +68,27 @@ def install_command(target: str, framework: str) -> None:
     click.echo(f"Configuration locale : {config_path}")
     if Feature.OBSERVE in config.features:
         click.echo("Les traces Observe seront écrites dans .pathtrace/traces/")
+
+
+@cli.command("uninstall")
+@click.option("--framework", type=click.Choice(available_adapters()), required=True)
+def uninstall_command(framework: str) -> None:
+    """Désactive Pathtrace pour le framework choisi."""
+    try:
+        project_dir = Path.cwd()
+        config = prepare_deactivation(project_dir, framework)
+        hook_path = get_adapter(framework).uninstall(project_dir)
+        if config is None:
+            config_path = remove_project_config(project_dir)
+        else:
+            config_path = write_project_config(project_dir, config)
+    except (ValueError, AdapterInstallError, ProjectConfigError) as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(f"Hooks Pathtrace {framework} retirés : {hook_path}")
+    if config is None:
+        click.echo(f"Configuration locale retirée : {config_path}")
+    else:
+        click.echo(f"Configuration locale mise à jour : {config_path}")
 
 
 @cli.command("status")

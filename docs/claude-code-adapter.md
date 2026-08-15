@@ -53,6 +53,24 @@ claude
 pathtrace test --latest --tests pathtrace.yaml --report --graph
 ```
 
+## Désinstallation
+
+```bash
+pathtrace uninstall --framework claude-code
+```
+
+La commande retire de `~/.claude/settings.json` uniquement les commandes de
+hooks gérées par Pathtrace, y compris les variantes internes utilisant
+`--configured-only` ou `--security-enabled`. Tous les hooks, permissions et
+autres réglages Claude Code de l’utilisateur sont conservés. La commande est
+idempotente et accepte une installation Pathtrace déjà partiellement retirée.
+
+Pathtrace retire également `claude-code` de `.pathtrace/config.yaml`. Si
+d’autres frameworks restent activés, leurs features sont conservées et
+`features` est recalculé comme leur union. Après la désinstallation du dernier
+framework, seul le fichier de configuration locale disparaît ; les traces,
+rapports, graphes et campagnes historiques restent intacts.
+
 ## Hooks capturés
 
 | Hook Claude Code | Utilité Pathtrace |

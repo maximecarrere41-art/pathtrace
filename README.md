@@ -83,6 +83,20 @@ pathtrace test --latest --tests pathtrace.yaml --report --graph
 
 Dans ce mode, **Pathtrace ne lance pas le prompt**. Il installe les hooks de l’agent choisi, écrit la trace pendant la session, puis teste cette trace.
 
+Pour désactiver ensuite Pathtrace pour un framework :
+
+```bash
+pathtrace uninstall --framework codex
+pathtrace uninstall --framework claude-code
+```
+
+`uninstall` retire uniquement les hooks gérés par Pathtrace et conserve les
+hooks ainsi que les autres réglages utilisateur du fournisseur. La commande
+retire aussi le framework de `.pathtrace/config.yaml` et recalcule l’union
+`features` à partir des autres frameworks encore actifs. Si aucun framework
+ne reste, seul `config.yaml` est supprimé ; les traces, rapports, graphes et
+campagnes historiques sous `.pathtrace/` sont conservés.
+
 ### 2. Lancer une campagne automatisée
 
 À choisir pour la non-régression, la CI ou l’exécution de plusieurs prompts et scénarios YAML.
