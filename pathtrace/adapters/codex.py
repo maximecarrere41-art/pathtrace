@@ -125,6 +125,7 @@ class CodexAdapter(FrameworkAdapter):
             state = store.load(session_id, turn_id)
             state["prompt"] = _prompt(payload)
             state["model"] = _model(payload)
+            _remember_transcript_path(state, payload)
             state.setdefault("started_at", utc_now())
             store.save(session_id, turn_id, state)
             return None
@@ -134,6 +135,7 @@ class CodexAdapter(FrameworkAdapter):
             event = _to_event(payload, event_slug)
             if event is not None:
                 _upsert_event(state.setdefault("events", []), event, event_slug)
+            _remember_transcript_path(state, payload)
             state.setdefault("started_at", utc_now())
             state.setdefault("model", _model(payload))
             store.save(session_id, turn_id, state)
@@ -355,11 +357,28 @@ def _finalize(
         if event.get("status") == "running":
             event["status"] = "unknown"
 
+    transcript_path = (
+        _text(payload, "transcript_path", "transcriptPath")
+        or _text(state, "_transcript_path")
+    )
+    transcript_prompt, transcript_outputs = _read_transcript_text(
+        transcript_path,
+        turn_id,
+    )
+    for event in events:
+        call_id = event.get("_call_id")
+        if isinstance(call_id, str) and call_id in transcript_outputs:
+            event["output_summary"] = transcript_outputs[call_id][:500]
+
     trace = build_trace(
         framework="codex",
         session_id=session_id,
         turn_id=turn_id,
-        prompt=_prompt(payload) or str(state.get("prompt") or ""),
+        prompt=(
+            transcript_prompt
+            if transcript_prompt is not None
+            else _prompt(payload) or str(state.get("prompt") or "")
+        ),
         model=_model(payload) if _model(payload) != "unknown" else str(state.get("model") or "unknown"),
         events=events,
         status=_stop_status(payload, events),
@@ -378,6 +397,80 @@ def _finalize(
     output_path.write_text(json.dumps(trace, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     store.remove(session_id, requested_turn_id)
     return output_path
+
+
+def _remember_transcript_path(state: dict[str, Any], payload: dict[str, Any]) -> None:
+    transcript_path = _text(payload, "transcript_path", "transcriptPath")
+    if transcript_path:
+        state["_transcript_path"] = transcript_path
+
+
+def _read_transcript_text(
+    transcript_path: str | None,
+    turn_id: str,
+) -> tuple[str | None, dict[str, str]]:
+    if not transcript_path:
+        return None, {}
+    path = Path(transcript_path)
+    if not path.is_file():
+        return None, {}
+
+    prompt = None
+    outputs: dict[str, str] = {}
+    try:
+        with path.open(encoding="utf-8") as transcript:
+            for line in transcript:
+                prompt = _read_transcript_record(line, turn_id, prompt, outputs)
+    except (OSError, UnicodeDecodeError):
+        return None, {}
+    return prompt, outputs
+
+
+def _read_transcript_record(
+    line: str,
+    turn_id: str,
+    prompt: str | None,
+    outputs: dict[str, str],
+) -> str | None:
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        return prompt
+    record_payload = record.get("payload") if isinstance(record, dict) else None
+    if not isinstance(record_payload, dict) or record_payload.get("turn_id") != turn_id:
+        return prompt
+    item = record_payload.get("item")
+    if not isinstance(item, dict):
+        return prompt
+    if item.get("type") == "UserMessage":
+        source_prompt = _user_message_text(item)
+        if source_prompt is not None:
+            prompt = source_prompt
+    call_id = item.get("id")
+    source_output = _item_output_text(item)
+    if isinstance(call_id, str) and source_output is not None:
+        outputs[call_id] = source_output
+    return prompt
+
+
+def _user_message_text(item: dict[str, Any]) -> str | None:
+    content = item.get("content")
+    if not isinstance(content, list):
+        return None
+    parts = [
+        part["text"]
+        for part in content
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    ]
+    return "".join(parts) if parts else None
+
+
+def _item_output_text(item: dict[str, Any]) -> str | None:
+    for key in ("aggregated_output", "formatted_output", "output", "stdout"):
+        value = item.get(key)
+        if isinstance(value, str):
+            return value
+    return None
 
 
 def _extract_skill(tool_name: str, tool_input: dict[str, Any]) -> tuple[str | None, str | None]:
