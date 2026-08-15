@@ -8,9 +8,20 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-from pathtrace.adapters.base import AdapterInstallError, FrameworkAdapter
+from pathtrace.adapters.base import (
+    AdapterInstallError,
+    FrameworkAdapter,
+    SecurityEnforcement,
+)
 from pathtrace.capture import CaptureStore, safe_fragment
+from pathtrace.config import Feature
 from pathtrace.model import build_trace, utc_now
+from pathtrace.security.action import build_security_action
+from pathtrace.security.model import (
+    SecurityAction,
+    SecurityDecision,
+    SecurityDecisionType,
+)
 
 
 HOOK_COMMAND_PREFIX = "pathtrace hook receive codex"
@@ -39,7 +50,11 @@ def _codex_home() -> Path:
 class CodexAdapter(FrameworkAdapter):
     name = "codex"
 
-    def install(self, project_dir: Path) -> Path:
+    def install(
+        self,
+        project_dir: Path,
+        features: frozenset[Feature] = frozenset({Feature.OBSERVE}),
+    ) -> Path:
         # Les hooks Codex sont globaux et ne doivent pas dépendre
         # du répertoire courant depuis lequel la commande est lancée.
         config_path = _codex_home() / "hooks.json"
@@ -47,10 +62,49 @@ class CodexAdapter(FrameworkAdapter):
         config = _read_existing_config(config_path)
         hooks = config.setdefault("hooks", {})
 
+        managed_events = set(MANAGED_EVENTS) if Feature.OBSERVE in features else set()
+        if Feature.SECURITY in features:
+            managed_events.add("PreToolUse")
         for event_name in MANAGED_EVENTS:
+            if event_name not in managed_events:
+                continue
             entries = hooks.setdefault(event_name, [])
-            _ensure_entry(entries, event_name)
+            _ensure_entry(
+                entries,
+                event_name,
+                configured_only=(
+                    event_name == "PreToolUse"
+                    and Feature.OBSERVE not in features
+                ),
+                security_enabled=(
+                    event_name == "PreToolUse"
+                    and Feature.SECURITY in features
+                ),
+            )
 
+        config_path.write_text(
+            json.dumps(config, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return config_path
+
+    def uninstall(self, project_dir: Path) -> Path:
+        """Retire uniquement les hooks Pathtrace de la configuration Codex."""
+        config_path = _codex_home() / "hooks.json"
+        if not config_path.is_file():
+            return config_path
+        config = _read_existing_config(config_path)
+        hooks = config.get("hooks")
+        if hooks is None:
+            return config_path
+        if not isinstance(hooks, dict):
+            raise PathtraceHookConfigError(
+                f"{config_path} contient une propriété hooks qui n'est pas un objet JSON"
+            )
+        if not _remove_managed_hooks(hooks, config_path):
+            return config_path
+        if not hooks:
+            config.pop("hooks")
         config_path.write_text(
             json.dumps(config, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -71,6 +125,7 @@ class CodexAdapter(FrameworkAdapter):
             state = store.load(session_id, turn_id)
             state["prompt"] = _prompt(payload)
             state["model"] = _model(payload)
+            _remember_transcript_path(state, payload)
             state.setdefault("started_at", utc_now())
             store.save(session_id, turn_id, state)
             return None
@@ -80,6 +135,7 @@ class CodexAdapter(FrameworkAdapter):
             event = _to_event(payload, event_slug)
             if event is not None:
                 _upsert_event(state.setdefault("events", []), event, event_slug)
+            _remember_transcript_path(state, payload)
             state.setdefault("started_at", utc_now())
             state.setdefault("model", _model(payload))
             store.save(session_id, turn_id, state)
@@ -89,6 +145,39 @@ class CodexAdapter(FrameworkAdapter):
             return _finalize(payload, project_dir, store, session_id, turn_id)
 
         raise ValueError(f"Événement Codex non supporté : {event_slug}")
+
+    def to_security_action(self, payload: dict[str, Any]) -> SecurityAction:
+        return build_security_action(
+            framework=self.name,
+            session_id=_text(payload, "session_id", "sessionId"),
+            turn_id=_text(payload, "turn_id", "turnId"),
+            tool=_text(payload, "tool_name", "toolName", "name"),
+            tool_input=payload.get("tool_input", payload.get("toolInput")),
+            cwd=_text(payload, "cwd", "working_directory", "workingDirectory"),
+        )
+
+    def enforce_security(self, decision: SecurityDecision) -> SecurityEnforcement:
+        if decision.decision is SecurityDecisionType.ALLOW:
+            return SecurityEnforcement(response=None, result="allowed_by_policy")
+        reason = decision.reason
+        result = "blocked"
+        approval_status = None
+        if decision.decision is SecurityDecisionType.REQUIRE_APPROVAL:
+            reason = f"{reason} Codex PreToolUse ne supporte pas la demande de validation."
+            result = "blocked_approval_unsupported"
+            approval_status = "unsupported"
+        response = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }
+        }
+        return SecurityEnforcement(
+            response=response,
+            result=result,
+            approval_status=approval_status,
+        )
 
 
 def _read_existing_config(config_path: Path) -> dict[str, Any]:
@@ -105,13 +194,90 @@ def _read_existing_config(config_path: Path) -> dict[str, Any]:
     return value
 
 
-def _ensure_entry(entries: list[dict[str, Any]], event_name: str) -> None:
-    command = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}"
+def _ensure_entry(
+    entries: list[dict[str, Any]],
+    event_name: str,
+    *,
+    configured_only: bool = False,
+    security_enabled: bool = False,
+) -> None:
+    base_command = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}"
+    flags = []
+    if configured_only:
+        flags.append("--configured-only")
+    if security_enabled:
+        flags.append("--security-enabled")
+    command = " ".join((base_command, *flags))
+    managed_commands = {
+        base_command,
+        f"{base_command} --configured-only",
+        f"{base_command} --security-enabled",
+        f"{base_command} --configured-only --security-enabled",
+    }
     for entry in entries:
         for hook in entry.get("hooks", []):
-            if hook.get("command") == command:
+            existing = hook.get("command")
+            if existing in managed_commands:
+                existing_security = "--security-enabled" in existing
+                existing_configured_only = "--configured-only" in existing
+                merged_flags = []
+                if existing_configured_only and configured_only:
+                    merged_flags.append("--configured-only")
+                if existing_security or security_enabled:
+                    merged_flags.append("--security-enabled")
+                hook["command"] = " ".join((base_command, *merged_flags))
                 return
     entries.append({"matcher": "*", "hooks": [{"type": "command", "command": command}]})
+
+
+def _remove_managed_hooks(hooks: dict[str, Any], config_path: Path) -> bool:
+    changed = False
+    for event_name in MANAGED_EVENTS:
+        entries = hooks.get(event_name)
+        if entries is None:
+            continue
+        if not isinstance(entries, list):
+            raise PathtraceHookConfigError(
+                f"{config_path} contient hooks.{event_name} qui n'est pas une liste"
+            )
+        remaining_entries = []
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+                remaining_entries.append(entry)
+                continue
+            remaining_hooks = [
+                hook
+                for hook in entry["hooks"]
+                if not _is_managed_hook(hook, event_name)
+            ]
+            if len(remaining_hooks) == len(entry["hooks"]):
+                remaining_entries.append(entry)
+                continue
+            changed = True
+            if remaining_hooks:
+                updated_entry = dict(entry)
+                updated_entry["hooks"] = remaining_hooks
+                remaining_entries.append(updated_entry)
+        if remaining_entries:
+            hooks[event_name] = remaining_entries
+        elif event_name in hooks:
+            hooks.pop(event_name)
+    return changed
+
+
+def _is_managed_hook(hook: Any, event_name: str) -> bool:
+    if not isinstance(hook, dict):
+        return False
+    command = hook.get("command")
+    if not isinstance(command, str):
+        return False
+    base_parts = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}".split()
+    command_parts = command.split()
+    flags = command_parts[len(base_parts) :]
+    return (
+        command_parts[: len(base_parts)] == base_parts
+        and all(flag in {"--configured-only", "--security-enabled"} for flag in flags)
+    )
 
 
 def _to_event(payload: dict[str, Any], hook: str) -> dict[str, Any] | None:
@@ -191,11 +357,28 @@ def _finalize(
         if event.get("status") == "running":
             event["status"] = "unknown"
 
+    transcript_path = (
+        _text(payload, "transcript_path", "transcriptPath")
+        or _text(state, "_transcript_path")
+    )
+    transcript_prompt, transcript_outputs = _read_transcript_text(
+        transcript_path,
+        turn_id,
+    )
+    for event in events:
+        call_id = event.get("_call_id")
+        if isinstance(call_id, str) and call_id in transcript_outputs:
+            event["output_summary"] = transcript_outputs[call_id][:500]
+
     trace = build_trace(
         framework="codex",
         session_id=session_id,
         turn_id=turn_id,
-        prompt=_prompt(payload) or str(state.get("prompt") or ""),
+        prompt=(
+            transcript_prompt
+            if transcript_prompt is not None
+            else _prompt(payload) or str(state.get("prompt") or "")
+        ),
         model=_model(payload) if _model(payload) != "unknown" else str(state.get("model") or "unknown"),
         events=events,
         status=_stop_status(payload, events),
@@ -214,6 +397,80 @@ def _finalize(
     output_path.write_text(json.dumps(trace, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     store.remove(session_id, requested_turn_id)
     return output_path
+
+
+def _remember_transcript_path(state: dict[str, Any], payload: dict[str, Any]) -> None:
+    transcript_path = _text(payload, "transcript_path", "transcriptPath")
+    if transcript_path:
+        state["_transcript_path"] = transcript_path
+
+
+def _read_transcript_text(
+    transcript_path: str | None,
+    turn_id: str,
+) -> tuple[str | None, dict[str, str]]:
+    if not transcript_path:
+        return None, {}
+    path = Path(transcript_path)
+    if not path.is_file():
+        return None, {}
+
+    prompt = None
+    outputs: dict[str, str] = {}
+    try:
+        with path.open(encoding="utf-8") as transcript:
+            for line in transcript:
+                prompt = _read_transcript_record(line, turn_id, prompt, outputs)
+    except (OSError, UnicodeDecodeError):
+        return None, {}
+    return prompt, outputs
+
+
+def _read_transcript_record(
+    line: str,
+    turn_id: str,
+    prompt: str | None,
+    outputs: dict[str, str],
+) -> str | None:
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        return prompt
+    record_payload = record.get("payload") if isinstance(record, dict) else None
+    if not isinstance(record_payload, dict) or record_payload.get("turn_id") != turn_id:
+        return prompt
+    item = record_payload.get("item")
+    if not isinstance(item, dict):
+        return prompt
+    if item.get("type") == "UserMessage":
+        source_prompt = _user_message_text(item)
+        if source_prompt is not None:
+            prompt = source_prompt
+    call_id = item.get("id")
+    source_output = _item_output_text(item)
+    if isinstance(call_id, str) and source_output is not None:
+        outputs[call_id] = source_output
+    return prompt
+
+
+def _user_message_text(item: dict[str, Any]) -> str | None:
+    content = item.get("content")
+    if not isinstance(content, list):
+        return None
+    parts = [
+        part["text"]
+        for part in content
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    ]
+    return "".join(parts) if parts else None
+
+
+def _item_output_text(item: dict[str, Any]) -> str | None:
+    for key in ("aggregated_output", "formatted_output", "output", "stdout"):
+        value = item.get(key)
+        if isinstance(value, str):
+            return value
+    return None
 
 
 def _extract_skill(tool_name: str, tool_input: dict[str, Any]) -> tuple[str | None, str | None]:

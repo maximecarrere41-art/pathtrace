@@ -42,6 +42,29 @@ pathtrace install --framework claude-code
 
 La commande fusionne les hooks dans `~/.claude/settings.json` sans supprimer les hooks déjà présents. Si `CLAUDE_CONFIG_DIR` est défini, ce répertoire est utilisé à la place de `~/.claude`.
 
+### Désinstaller les hooks
+
+```bash
+pathtrace uninstall --framework codex
+pathtrace uninstall --framework claude-code
+```
+
+Ces commandes retirent les hooks Pathtrace globaux de la machine : Codex dans
+`~/.codex/hooks.json` (ou `CODEX_HOME`) et Claude Code dans
+`~/.claude/settings.json` (ou `CLAUDE_CONFIG_DIR`). Elles affectent donc tous
+les projets locaux qui utilisent Pathtrace avec le framework désinstallé.
+Seuls les hooks gérés par Pathtrace, y compris leurs variantes internes, sont
+retirés ; les hooks et réglages utilisateur sont conservés. La commande peut
+être relancée sans erreur si les hooks sont déjà absents ou partiellement
+retirés.
+
+Seule la configuration `.pathtrace/config.yaml` du projet courant est mise à
+jour pour oublier le framework choisi. Si plusieurs frameworks sont activés,
+les autres restent configurés et `features` est recalculé comme leur union.
+Après la désinstallation du dernier framework, seul `config.yaml` est
+supprimé : les traces, rapports, graphes et campagnes historiques ne sont
+jamais supprimés automatiquement.
+
 ## 2. Utiliser l’agent normalement
 
 ### Codex CLI

@@ -6,12 +6,18 @@
 
 > Projet en version initiale — support de Codex CLI et Claude Code.
 
-Pathtrace teste **le chemin suivi par un agent IA** : les skills chargées, les outils utilisés, les commandes exécutées et leur ordre.
+Pathtrace observe et teste **le chemin suivi par un agent IA**. Il peut aussi
+contrôler ses actions avant exécution et auditer uniquement ces décisions de
+sécurité.
 
 Il complète les tests classiques : au lieu de vérifier uniquement la réponse finale, il vérifie aussi **comment l’agent y est arrivé**.
 
 ```text
 prompt → agent → adaptateur → trace JSON → assertions YAML → rapport → graphe HTML
+```
+
+```text
+agent → PreToolUse → Policy Engine → ALLOW / BLOCK / REQUIRE_APPROVAL → audit OTLP
 ```
 
 ## Aperçu
@@ -36,7 +42,24 @@ Pour contribuer au projet :
 python -m pip install -e ".[dev]"
 ```
 
-## Deux façons de l’utiliser
+## Control et Audit
+
+Runtime Security est indépendant du moteur d'assertions et peut fonctionner
+sans Observe/Test :
+
+```bash
+pathtrace install security --framework codex
+pathtrace status
+```
+
+Trois intentions sont disponibles : `observe`, `security` et `all`. Security
+applique des règles déterministes avant l'exécution. Son audit OTLP est
+optionnel, fail-open et limité aux décisions du Policy Engine ; les traces
+historiques ne deviennent pas des spans OpenTelemetry.
+
+Voir le [guide Runtime Security et audit](docs/security.md).
+
+## Deux chemins Observe/Test
 
 ### 1. Observer puis tester une session manuelle
 
@@ -59,6 +82,24 @@ pathtrace test --latest --tests pathtrace.yaml --report --graph
 ```
 
 Dans ce mode, **Pathtrace ne lance pas le prompt**. Il installe les hooks de l’agent choisi, écrit la trace pendant la session, puis teste cette trace.
+
+Pour désactiver ensuite Pathtrace pour un framework :
+
+```bash
+pathtrace uninstall --framework codex
+pathtrace uninstall --framework claude-code
+```
+
+`uninstall` retire les hooks Pathtrace globaux de la machine pour le framework
+choisi : Codex dans `~/.codex/hooks.json` (ou `CODEX_HOME`) et Claude Code dans
+`~/.claude/settings.json` (ou `CLAUDE_CONFIG_DIR`). Cette suppression affecte
+donc tous les projets locaux qui utilisent Pathtrace avec ce framework. Les
+hooks et réglages utilisateur non gérés par Pathtrace sont conservés.
+
+La commande met aussi à jour le `.pathtrace/config.yaml` du projet courant et
+recalcule l’union `features` à partir des autres frameworks encore actifs. Si
+aucun framework ne reste, seul `config.yaml` est supprimé ; les traces,
+rapports, graphes et campagnes historiques sous `.pathtrace/` sont conservés.
 
 ### 2. Lancer une campagne automatisée
 
@@ -228,6 +269,7 @@ Pour ajouter un autre agent, il suffit d’implémenter son adaptateur et son ru
 - [Runner et adaptateur : rôles différents](docs/runners-and-adapters.md)
 - [Capture et propriétés Codex](docs/codex-adapter.md)
 - [Intégration Claude Code](docs/claude-code-adapter.md)
+- [Runtime Security, policies et audit OTLP](docs/security.md)
 - [Créer un adaptateur et un runner](docs/adapters.md)
 
 ## Développement
@@ -238,7 +280,7 @@ python -m pytest
 
 ## Feuille de route
 
-- export OpenTelemetry ;
+- enrichissement des capacités Runtime Security exposées par les fournisseurs ;
 - prise en charge d’autres agents et frameworks ;
 - amélioration des rapports et exemples publics.
 

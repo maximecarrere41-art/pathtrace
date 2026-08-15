@@ -9,9 +9,20 @@ import uuid
 from pathlib import Path
 from typing import Any, Iterable
 
-from pathtrace.adapters.base import AdapterInstallError, FrameworkAdapter
+from pathtrace.adapters.base import (
+    AdapterInstallError,
+    FrameworkAdapter,
+    SecurityEnforcement,
+)
 from pathtrace.capture import CaptureStore, safe_fragment
+from pathtrace.config import Feature
 from pathtrace.model import build_trace, utc_now
+from pathtrace.security.action import build_security_action
+from pathtrace.security.model import (
+    SecurityAction,
+    SecurityDecision,
+    SecurityDecisionType,
+)
 
 
 HOOK_COMMAND_PREFIX = "pathtrace hook receive claude-code"
@@ -58,7 +69,11 @@ class ClaudeCodeAdapter(FrameworkAdapter):
 
     name = "claude-code"
 
-    def install(self, project_dir: Path) -> Path:
+    def install(
+        self,
+        project_dir: Path,
+        features: frozenset[Feature] = frozenset({Feature.OBSERVE}),
+    ) -> Path:
         """Fusionne les hooks Pathtrace dans les paramètres utilisateur Claude."""
         config_path = _claude_home() / "settings.json"
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,14 +84,53 @@ class ClaudeCodeAdapter(FrameworkAdapter):
                 f"{config_path} contient une propriété hooks qui n'est pas un objet JSON"
             )
 
+        managed_events = set(MANAGED_EVENTS) if Feature.OBSERVE in features else set()
+        if Feature.SECURITY in features:
+            managed_events.add("PreToolUse")
         for event_name in MANAGED_EVENTS:
+            if event_name not in managed_events:
+                continue
             entries = hooks.setdefault(event_name, [])
             if not isinstance(entries, list):
                 raise PathtraceClaudeHookConfigError(
                     f"{config_path} contient hooks.{event_name} qui n'est pas une liste"
                 )
-            _ensure_entry(entries, event_name)
+            _ensure_entry(
+                entries,
+                event_name,
+                configured_only=(
+                    event_name == "PreToolUse"
+                    and Feature.OBSERVE not in features
+                ),
+                security_enabled=(
+                    event_name == "PreToolUse"
+                    and Feature.SECURITY in features
+                ),
+            )
 
+        config_path.write_text(
+            json.dumps(config, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return config_path
+
+    def uninstall(self, project_dir: Path) -> Path:
+        """Retire uniquement les hooks Pathtrace des paramètres Claude Code."""
+        config_path = _claude_home() / "settings.json"
+        if not config_path.is_file():
+            return config_path
+        config = _read_existing_config(config_path)
+        hooks = config.get("hooks")
+        if hooks is None:
+            return config_path
+        if not isinstance(hooks, dict):
+            raise PathtraceClaudeHookConfigError(
+                f"{config_path} contient une propriété hooks qui n'est pas un objet JSON"
+            )
+        if not _remove_managed_hooks(hooks, config_path):
+            return config_path
+        if not hooks:
+            config.pop("hooks")
         config_path.write_text(
             json.dumps(config, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -133,6 +187,39 @@ class ClaudeCodeAdapter(FrameworkAdapter):
 
         raise ValueError(f"Événement Claude Code non supporté : {event_slug}")
 
+    def to_security_action(self, payload: dict[str, Any]) -> SecurityAction:
+        return build_security_action(
+            framework=self.name,
+            session_id=_text(payload, "session_id", "sessionId"),
+            turn_id=_text(payload, "turn_id", "turnId"),
+            tool=_text(payload, "tool_name", "toolName", "name"),
+            tool_input=payload.get("tool_input", payload.get("toolInput")),
+            cwd=_text(payload, "cwd", "working_directory", "workingDirectory"),
+        )
+
+    def enforce_security(self, decision: SecurityDecision) -> SecurityEnforcement:
+        if decision.decision is SecurityDecisionType.ALLOW:
+            return SecurityEnforcement(response=None, result="allowed_by_policy")
+        permission = "deny"
+        result = "blocked"
+        approval_status = None
+        if decision.decision is SecurityDecisionType.REQUIRE_APPROVAL:
+            permission = "ask"
+            result = "approval_requested"
+            approval_status = "requested"
+        response = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": permission,
+                "permissionDecisionReason": decision.reason,
+            }
+        }
+        return SecurityEnforcement(
+            response=response,
+            result=result,
+            approval_status=approval_status,
+        )
+
 
 def _read_existing_config(config_path: Path) -> dict[str, Any]:
     if not config_path.is_file():
@@ -148,16 +235,46 @@ def _read_existing_config(config_path: Path) -> dict[str, Any]:
     return value
 
 
-def _ensure_entry(entries: list[Any], event_name: str) -> None:
-    command = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}"
+def _ensure_entry(
+    entries: list[Any],
+    event_name: str,
+    *,
+    configured_only: bool = False,
+    security_enabled: bool = False,
+) -> None:
+    base_command = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}"
+    flags = []
+    if configured_only:
+        flags.append("--configured-only")
+    if security_enabled:
+        flags.append("--security-enabled")
+    command = " ".join((base_command, *flags))
+    managed_commands = {
+        base_command,
+        f"{base_command} --configured-only",
+        f"{base_command} --security-enabled",
+        f"{base_command} --configured-only --security-enabled",
+    }
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         hooks = entry.get("hooks", [])
         if not isinstance(hooks, list):
             continue
-        if any(isinstance(hook, dict) and hook.get("command") == command for hook in hooks):
-            return
+        for hook in hooks:
+            if not isinstance(hook, dict):
+                continue
+            existing = hook.get("command")
+            if existing in managed_commands:
+                existing_security = "--security-enabled" in existing
+                existing_configured_only = "--configured-only" in existing
+                merged_flags = []
+                if existing_configured_only and configured_only:
+                    merged_flags.append("--configured-only")
+                if existing_security or security_enabled:
+                    merged_flags.append("--security-enabled")
+                hook["command"] = " ".join((base_command, *merged_flags))
+                return
 
     entry: dict[str, Any] = {
         "hooks": [{"type": "command", "command": command}],
@@ -165,6 +282,56 @@ def _ensure_entry(entries: list[Any], event_name: str) -> None:
     if event_name in TOOL_EVENTS:
         entry["matcher"] = "*"
     entries.append(entry)
+
+
+def _remove_managed_hooks(hooks: dict[str, Any], config_path: Path) -> bool:
+    changed = False
+    for event_name in MANAGED_EVENTS:
+        entries = hooks.get(event_name)
+        if entries is None:
+            continue
+        if not isinstance(entries, list):
+            raise PathtraceClaudeHookConfigError(
+                f"{config_path} contient hooks.{event_name} qui n'est pas une liste"
+            )
+        remaining_entries = []
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+                remaining_entries.append(entry)
+                continue
+            remaining_hooks = [
+                hook
+                for hook in entry["hooks"]
+                if not _is_managed_hook(hook, event_name)
+            ]
+            if len(remaining_hooks) == len(entry["hooks"]):
+                remaining_entries.append(entry)
+                continue
+            changed = True
+            if remaining_hooks:
+                updated_entry = dict(entry)
+                updated_entry["hooks"] = remaining_hooks
+                remaining_entries.append(updated_entry)
+        if remaining_entries:
+            hooks[event_name] = remaining_entries
+        elif event_name in hooks:
+            hooks.pop(event_name)
+    return changed
+
+
+def _is_managed_hook(hook: Any, event_name: str) -> bool:
+    if not isinstance(hook, dict):
+        return False
+    command = hook.get("command")
+    if not isinstance(command, str):
+        return False
+    base_parts = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}".split()
+    command_parts = command.split()
+    flags = command_parts[len(base_parts) :]
+    return (
+        command_parts[: len(base_parts)] == base_parts
+        and all(flag in {"--configured-only", "--security-enabled"} for flag in flags)
+    )
 
 
 def _load_turn_state(

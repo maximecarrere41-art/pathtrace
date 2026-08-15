@@ -53,6 +53,28 @@ claude
 pathtrace test --latest --tests pathtrace.yaml --report --graph
 ```
 
+## Désinstallation
+
+```bash
+pathtrace uninstall --framework claude-code
+```
+
+La commande retire de la configuration Claude Code globale à la machine
+(`~/.claude/settings.json`, ou le répertoire `CLAUDE_CONFIG_DIR`) uniquement les
+commandes de hooks gérées par Pathtrace, y compris les variantes internes
+utilisant `--configured-only` ou `--security-enabled`. Cette suppression
+affecte donc tous les projets locaux qui utilisent Pathtrace avec Claude Code.
+Tous les hooks, permissions et autres réglages Claude Code de l’utilisateur
+sont conservés. La commande est idempotente et accepte une installation
+Pathtrace déjà partiellement retirée.
+
+Pathtrace retire également `claude-code` du `.pathtrace/config.yaml` du projet
+courant. Si d’autres frameworks restent activés, leurs features sont
+conservées et `features` est recalculé comme leur union. Après la
+désinstallation du dernier framework, seul le fichier de configuration locale
+disparaît ; les traces, rapports, graphes et campagnes historiques restent
+intacts.
+
 ## Hooks capturés
 
 | Hook Claude Code | Utilité Pathtrace |
@@ -65,6 +87,13 @@ pathtrace test --latest --tests pathtrace.yaml --report --graph
 | `PostToolUseFailure` | Termine un appel en échec. |
 | `Stop` | Finalise une trace réussie. |
 | `StopFailure` | Finalise une trace en échec. |
+
+En activation `security`, seul `PreToolUse` est installé. Claude Code sait
+traduire les trois décisions communes avec `allow`, `deny` et `ask`. Pathtrace
+utilise donc `ask` pour `REQUIRE_APPROVAL`, sans construire de workflow
+interactif parallèle.
+
+Voir [Runtime Security et audit des décisions](security.md).
 
 `tool_use_id` corrèle les événements avant/après afin qu’un appel ne soit présent qu’une fois dans la trace.
 

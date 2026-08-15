@@ -19,6 +19,9 @@ class FutureAgentAdapter(FrameworkAdapter):
     def install(self, project_dir: Path) -> Path:
         ...
 
+    def uninstall(self, project_dir: Path) -> Path:
+        ...
+
     def handle(
         self,
         event_slug: str,
@@ -32,7 +35,11 @@ L’ajouter au registre `pathtrace/adapters/__init__.py` rend disponible :
 
 ```bash
 pathtrace install --framework future-agent
+pathtrace uninstall --framework future-agent
 ```
+
+`uninstall` doit retirer uniquement les hooks appartenant à Pathtrace et
+conserver toute configuration utilisateur du fournisseur.
 
 ## 2. Ajouter le runner
 
