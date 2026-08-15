@@ -165,7 +165,7 @@ def _handle_hook(
     security_enabled: bool = False,
 ) -> None:
     try:
-        payload = json.load(sys.stdin)
+        payload = json.load(getattr(sys.stdin, "buffer", sys.stdin))
     except json.JSONDecodeError:
         payload = {}
     try:

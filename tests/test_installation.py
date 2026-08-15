@@ -86,6 +86,116 @@ def test_install_all_enables_both_features(tmp_path, monkeypatch):
     assert "Stop" in hooks
 
 
+def test_install_all_observes_allowed_tool_then_enforces_block(
+    tmp_path,
+    monkeypatch,
+):
+    codex_home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    installed = runner.invoke(
+        cli,
+        ["install", "all", "--framework", "codex"],
+    )
+    assert installed.exit_code == 0, installed.output
+
+    config_path = tmp_path / ".pathtrace" / "config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["security"]["rules"] = [
+        {
+            "id": "block-shell",
+            "action": "shell",
+            "decision": "block",
+            "match": {"command": "rm -rf build"},
+            "reason": "Configured policy",
+        }
+    ]
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    prompt = runner.invoke(
+        cli,
+        ["hook", "receive", "codex", "user-prompt-submit"],
+        input=json.dumps(
+            {"session_id": "s", "turn_id": "allowed", "prompt": "Teste le dépôt."},
+            ensure_ascii=False,
+        ),
+    )
+    allowed = runner.invoke(
+        cli,
+        [
+            "hook",
+            "receive",
+            "codex",
+            "pre-tool-use",
+            "--security-enabled",
+        ],
+        input=json.dumps(
+            {
+                "session_id": "s",
+                "turn_id": "allowed",
+                "tool_use_id": "call-1",
+                "tool_name": "Bash",
+                "tool_input": {"command": "python -m pytest"},
+            }
+        ),
+    )
+    post_tool = runner.invoke(
+        cli,
+        ["hook", "receive", "codex", "post-tool-use"],
+        input=json.dumps(
+            {
+                "session_id": "s",
+                "turn_id": "allowed",
+                "tool_use_id": "call-1",
+                "tool_name": "Bash",
+                "tool_input": {"command": "python -m pytest"},
+                "tool_response": {"success": True},
+            }
+        ),
+    )
+    stopped = runner.invoke(
+        cli,
+        ["hook", "receive", "codex", "stop"],
+        input=json.dumps({"session_id": "s", "turn_id": "allowed"}),
+    )
+
+    assert prompt.exit_code == allowed.exit_code == post_tool.exit_code == 0
+    assert stopped.exit_code == 0, stopped.output
+    traces = list((tmp_path / ".pathtrace" / "traces").rglob("*.json"))
+    assert len(traces) == 1
+    trace = json.loads(traces[0].read_text(encoding="utf-8"))
+    assert trace["summary"]["commands"] == ["python -m pytest"]
+
+    blocked = runner.invoke(
+        cli,
+        [
+            "hook",
+            "receive",
+            "codex",
+            "pre-tool-use",
+            "--security-enabled",
+        ],
+        input=json.dumps(
+            {
+                "session_id": "s",
+                "turn_id": "blocked",
+                "tool_name": "Bash",
+                "tool_input": {"command": "rm -rf build"},
+            }
+        ),
+    )
+
+    assert blocked.exit_code == 0, blocked.output
+    assert json.loads(blocked.output)["hookSpecificOutput"][
+        "permissionDecision"
+    ] == "deny"
+
+
 def test_installations_merge_and_are_idempotent(tmp_path, monkeypatch):
     codex_home = tmp_path / "codex-home"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))

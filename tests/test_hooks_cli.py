@@ -1,11 +1,10 @@
 import json
-
-from pathtrace.cli import cli
-
-import json
+from io import BytesIO, TextIOWrapper
 
 from click.testing import CliRunner
-from pathtrace.cli import cli
+
+from pathtrace.adapters.codex import CodexAdapter
+from pathtrace.cli import _handle_hook, cli
 
 
 def test_stop_hook_creates_trace_and_returns_json(tmp_path, monkeypatch):
@@ -46,3 +45,33 @@ def test_stop_hook_outputs_valid_json(monkeypatch):
 
     assert result.exit_code == 0
     assert json.loads(result.output) == {}
+
+
+def test_hook_preserves_utf8_prompt_when_stdin_uses_windows_code_page(
+    tmp_path,
+    monkeypatch,
+):
+    prompt = "Dépose le dépôt français à côté de l'été."
+    payload = json.dumps(
+        {
+            "session_id": "s1",
+            "turn_id": "t1",
+            "prompt": prompt,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "pathtrace.cli.sys.stdin",
+        TextIOWrapper(BytesIO(payload), encoding="cp1252"),
+    )
+
+    _handle_hook("codex", "user-prompt-submit")
+    output = CodexAdapter().handle(
+        "stop",
+        {"session_id": "s1", "turn_id": "t1"},
+        tmp_path,
+    )
+    trace = json.loads(output.read_text(encoding="utf-8"))
+
+    assert trace["prompt"] == prompt
