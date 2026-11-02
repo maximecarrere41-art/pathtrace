@@ -23,7 +23,6 @@ class SecurityDecisionType(str, Enum):
 
 class EnforcementMode(str, Enum):
     ENFORCE = "enforce"
-    AUDIT_ONLY = "audit_only"
 
 
 class RiskLevel(str, Enum):

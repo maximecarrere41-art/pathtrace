@@ -4,290 +4,131 @@
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-> Projet en version initiale — support de Codex CLI et Claude Code.
+**Runtime Security pour les agents IA Codex CLI et Claude Code.**
 
-Pathtrace observe et teste **le chemin suivi par un agent IA**. Il peut aussi
-contrôler ses actions avant exécution et auditer uniquement ces décisions de
-sécurité.
+Pathtrace contrôle les commandes et actions exposées par les agents avant leur
+exécution. Définissez ce qui doit être autorisé, bloqué ou soumis à validation,
+puis auditez les décisions de sécurité. En complément, Observe/Test permet
+d'enregistrer les traces et de vérifier le comportement des agents.
 
-Il complète les tests classiques : au lieu de vérifier uniquement la réponse finale, il vérifie aussi **comment l’agent y est arrivé**.
-
-```text
-prompt → agent → adaptateur → trace JSON → assertions YAML → rapport → graphe HTML
-```
+## Contrôler les actions de vos agents
 
 ```text
-agent → PreToolUse → Policy Engine → ALLOW / BLOCK / REQUIRE_APPROVAL → audit OTLP
+Codex / Claude Code → hook avant exécution → règles fournisseur + projet
+                                         → autoriser / bloquer / demander validation
+                                         → audit OTLP optionnel
 ```
 
-## Aperçu
+Par exemple, les presets peuvent bloquer `rm -rf build && git status` et les
+force push, ou demander une validation avant un reset dur et un push Git.
+Les règles sont modifiables et peuvent s'appliquer à tous les projets d'un
+fournisseur ou uniquement au projet courant.
 
-![Exemple d’une trace Pathtrace](docs/images/pathtrace-demo.png)
+| Décision | Claude Code | Codex CLI |
+|---|---|---|
+| Autoriser | Conserve les permissions natives | Conserve les permissions natives |
+| Bloquer | Empêche l'action via le hook | Empêche l'action via le hook |
+| Demander validation | Demande une validation native | Bloque explicitement : validation non prise en charge par l'adaptateur actuel |
 
-## Prérequis
+## Démarrer
 
-- Python 3.11 ou supérieur ;
-- Codex CLI pour utiliser le framework `codex` ;
-- Claude Code pour utiliser le framework `claude-code`.
-
-## Installation
+Prérequis : Python 3.11+, ainsi que Codex CLI ou Claude Code. Depuis ce dépôt :
 
 ```bash
-python -m pip install -e .
+python -m pip install -e ".[security]"
 ```
 
-Pour contribuer au projet :
+Initialiser les règles fournisseur, depuis **n'importe quel dossier** :
 
 ```bash
-python -m pip install -e ".[dev]"
-```
-
-## Control et Audit
-
-Runtime Security est indépendant du moteur d'assertions et peut fonctionner
-sans Observe/Test :
-
-```bash
-pathtrace install security --framework codex
+pathtrace install security --framework codex --scope provider --presets
+pathtrace install security --framework claude-code --scope provider --presets
 pathtrace status
 ```
 
-Trois intentions sont disponibles : `observe`, `security` et `all`. Security
-applique des règles déterministes avant l'exécution. Son audit OTLP est
-optionnel, fail-open et limité aux décisions du Policy Engine ; les traces
-historiques ne deviennent pas des spans OpenTelemetry.
+Security applique toujours les règles. `--presets` accepte explicitement le
+catalogue proposé et l'active immédiatement. Sans `--presets` ou `--no-presets`,
+l'installation présente les presets et demande votre choix avant toute écriture.
+Une réinstallation ne remplace jamais une configuration existante. Les règles
+personnalisées se modifient dans le fichier de configuration.
 
-Voir le [guide Runtime Security et audit](docs/security.md).
-
-## Deux chemins Observe/Test
-
-### 1. Observer puis tester une session manuelle
-
-À choisir pour explorer un agent, comprendre une exécution réelle ou vérifier ponctuellement un tour déjà lancé par un humain.
-
-#### Codex CLI
+Pour ajouter des règles propres à un projet, exécuter **à sa racine** :
 
 ```bash
-pathtrace install --framework codex
-codex
-pathtrace test --latest --tests pathtrace.yaml --report --graph
+pathtrace install security --framework codex --scope project
 ```
 
-#### Claude Code
+`project` est la portée par défaut. Les règles projet complètent celles du
+fournisseur : elles ne peuvent pas contourner ses blocages. L'audit des décisions
+appliquées peut être exporté via OTLP, indépendamment de la capture des traces.
+
+Voir le [guide Security et Audit](docs/security.md) et la
+**[référence des commandes CLI](docs/cli-reference.md)**.
+
+## Observer et tester, en complément
+
+Observe/Test enregistre le chemin suivi par un agent, puis vérifie des assertions
+YAML. Par exemple : confirmer qu'une correction a été suivie de l'exécution des
+tests. Il fonctionne indépendamment de Security, ou avec lui via `install all`.
+
+```text
+agent → trace JSON → assertions YAML → rapport / graphe HTML
+```
+
+![Exemple d'une trace Pathtrace](docs/images/pathtrace-demo.png)
 
 ```bash
-pathtrace install --framework claude-code
-claude
-pathtrace test --latest --tests pathtrace.yaml --report --graph
+pathtrace install observe --framework codex
+pathtrace test --trace examples/trace-example.json --tests examples/path-tests-example.yaml --report --graph
+pathtrace run --tests examples/run-suite-example.yaml --framework codex --report --graph
 ```
 
-Dans ce mode, **Pathtrace ne lance pas le prompt**. Il installe les hooks de l’agent choisi, écrit la trace pendant la session, puis teste cette trace.
+Les mêmes commandes acceptent `--framework claude-code` pour l'installation et
+les campagnes. Une campagne lance réellement les prompts de la suite.
 
-Pour désactiver ensuite Pathtrace pour un framework :
+Voir le [guide Observe/Test](docs/quickstart.md), les
+[campagnes automatisées](docs/automated-runs.md) et le [format des traces](docs/trace-format.md).
+
+## Portée et limites
+
+Pathtrace contrôle ce que les hooks exposent avant exécution. Il n'est ni un
+antivirus ni une sandbox et ne garantit pas la détection de toutes les variantes
+shell, scripts ou accès aux secrets. Les permissions natives restent nécessaires.
+Les [limites des presets](docs/security.md#presets-fournisseur) précisent les cas
+non couverts et les faux positifs connus.
+
+- **Projet** : depuis sa racine, `pathtrace uninstall --framework codex --scope project`
+  désactive l'activation locale de Pathtrace pour Codex. Les autres projets et la
+  configuration fournisseur restent inchangés ; ses règles continuent à s'appliquer.
+- **Fournisseur** : depuis n'importe quel dossier,
+  `pathtrace uninstall --framework codex --scope provider` supprime uniquement la
+  configuration Security Codex. Les projets ayant leur propre configuration restent
+  actifs. Les hooks partagés et les réglages natifs sont conservés.
+
+Les mêmes commandes acceptent `--framework claude-code`. La portée par défaut est `project`.
+
+Pour retirer **tous les hooks Pathtrace d'un fournisseur dans tous ses projets**,
+utiliser la purge depuis n'importe quel dossier :
 
 ```bash
-pathtrace uninstall --framework codex
-pathtrace uninstall --framework claude-code
+pathtrace uninstall --framework codex --purge
+pathtrace uninstall --framework codex --purge --yes
 ```
 
-`uninstall` retire les hooks Pathtrace globaux de la machine pour le framework
-choisi : Codex dans `~/.codex/hooks.json` (ou `CODEX_HOME`) et Claude Code dans
-`~/.claude/settings.json` (ou `CLAUDE_CONFIG_DIR`). Cette suppression affecte
-donc tous les projets locaux qui utilisent Pathtrace avec ce framework. Les
-hooks et réglages utilisateur non gérés par Pathtrace sont conservés.
-
-La commande met aussi à jour le `.pathtrace/config.yaml` du projet courant et
-recalcule l’union `features` à partir des autres frameworks encore actifs. Si
-aucun framework ne reste, seul `config.yaml` est supprimé ; les traces,
-rapports, graphes et campagnes historiques sous `.pathtrace/` sont conservés.
-
-### 2. Lancer une campagne automatisée
-
-À choisir pour la non-régression, la CI ou l’exécution de plusieurs prompts et scénarios YAML.
-
-#### Codex CLI
-
-```bash
-pathtrace run --tests tests/scenarios/ --framework codex --report --graph
-```
-
-Pathtrace lance les scénarios avec `codex exec`. Les hooks Codex nécessaires sont installés ou complétés automatiquement avant l’exécution.
-
-#### Claude Code
-
-```bash
-pathtrace run --tests tests/scenarios/ --framework claude-code --report --graph
-```
-
-Pathtrace lance les scénarios avec `claude -p`. Les hooks Claude Code sont fusionnés automatiquement dans `~/.claude/settings.json` : aucune édition manuelle ni exécution préalable de `pathtrace install` n’est nécessaire.
-
-Dans les deux cas, Pathtrace :
-
-1. lance le prompt avec le runner de l’agent ;
-2. récupère la trace produite par l’adaptateur ;
-3. applique les assertions YAML ;
-4. écrit les rapports et graphes ;
-5. passe au scénario suivant.
-
-## Exemple de trace
-
-Le format de trace reste identique quel que soit l’agent. Seules les valeurs natives, comme `framework`, `tool` ou `path`, changent.
-
-### Codex CLI
-
-```json
-{
-  "prompt": "Corrige le bug puis lance les tests",
-  "framework": "codex",
-  "summary": {
-    "skills": ["conventions-code"],
-    "commands": ["python -m pytest"],
-    "tools": ["Read", "Bash"]
-  },
-  "events": [
-    {
-      "type": "skill",
-      "name": "conventions-code",
-      "tool": "Read",
-      "path": ".agents/skills/conventions-code/SKILL.md",
-      "status": "success"
-    },
-    {
-      "type": "tool_call",
-      "name": "Bash",
-      "command": "python -m pytest",
-      "status": "success"
-    }
-  ]
-}
-```
-
-### Claude Code
-
-```json
-{
-  "prompt": "Corrige le bug puis lance les tests",
-  "framework": "claude-code",
-  "summary": {
-    "skills": ["conventions-code"],
-    "commands": ["python -m pytest"],
-    "tools": ["Read", "Bash"]
-  },
-  "events": [
-    {
-      "type": "skill",
-      "name": "conventions-code",
-      "tool": "Read",
-      "path": ".claude/skills/conventions-code/SKILL.md",
-      "status": "success"
-    },
-    {
-      "type": "tool_call",
-      "name": "Bash",
-      "command": "python -m pytest",
-      "status": "success"
-    }
-  ]
-}
-```
-
-Le cœur ne connaît aucun nom de skill, commande ou outil. Chaque adaptateur traduit les événements natifs vers un modèle commun.
-
-## Assertions YAML
-
-### Session manuelle
-
-```yaml
-version: 1
-
-tests:
-  - name: le code est validé
-    assertions:
-      - type: must_include
-        event: skill:conventions-code
-
-      - type: must_include
-        event: tool_call:Bash
-        where:
-          command: "*pytest*"
-```
-
-### Campagne automatisée avec Codex
-
-```yaml
-version: 1
-framework: codex
-
-defaults:
-  project_dir: ..
-  timeout: 600
-
-scenarios:
-  - name: correction suivie des tests
-    prompt: |
-      Corrige le bug décrit dans issue.md.
-      Lance les tests avant de terminer.
-    assertions:
-      - type: must_include
-        event: tool_call:Bash
-        where:
-          command: "*pytest*"
-```
-
-### Campagne automatisée avec Claude Code
-
-```yaml
-version: 1
-framework: claude-code
-
-defaults:
-  project_dir: ..
-  timeout: 600
-
-scenarios:
-  - name: vérification de sécurité
-    prompt: Analyse les changements et vérifie qu’aucune commande destructive n’est utilisée.
-    tests_file: assertions/security.yaml
-```
-
-Un scénario utilise soit `assertions` directement, soit `tests_file` pour réutiliser un fichier YAML manuel.
-
-## Architecture extensible
-
-Deux abstractions sont séparées :
-
-- `FrameworkAdapter` observe les événements natifs et produit une trace commune ;
-- `AgentRunner` lance un prompt en mode non interactif.
-
-Pour ajouter un autre agent, il suffit d’implémenter son adaptateur et son runner. Le moteur YAML, les rapports et les graphes restent inchangés.
-
-## Documentation
-
-- [Guide pas à pas et choix du mode](docs/quickstart.md)
-- [Campagnes automatisées](docs/automated-runs.md)
-- [Format JSON et propriétés abstraites](docs/trace-format.md)
-- [Runner et adaptateur : rôles différents](docs/runners-and-adapters.md)
-- [Capture et propriétés Codex](docs/codex-adapter.md)
-- [Intégration Claude Code](docs/claude-code-adapter.md)
-- [Runtime Security, policies et audit OTLP](docs/security.md)
-- [Créer un adaptateur et un runner](docs/adapters.md)
+La première commande demande une confirmation explicite ; `--yes` convient aux
+usages automatisés. La purge supprime les hooks Pathtrace et le fichier Security
+fournisseur, en conservant les hooks utilisateur, l'autre fournisseur et tous les
+dossiers `.pathtrace` des projets : configurations, traces et rapports compris.
+Observe/Test et Security ne sont alors plus déclenchés par ces hooks dans les
+projets concernés. Une installation ou une campagne ultérieure peut les réinstaller.
+`--purge` ne se combine pas avec `--scope` et `--yes` nécessite `--purge`.
 
 ## Développement
 
 ```bash
+python -m pip install -e ".[dev,security]"
 python -m pytest
 ```
 
-## Feuille de route
-
-- enrichissement des capacités Runtime Security exposées par les fournisseurs ;
-- prise en charge d’autres agents et frameworks ;
-- amélioration des rapports et exemples publics.
-
-## Auteur
-
-Créé et maintenu par [Maxime Carrere](https://github.com/maximecarrere41-art).
-
-## Licence
-
-Distribué sous licence MIT. Voir [LICENSE](LICENSE).
+Les [adaptateurs](docs/adapters.md) et [runners](docs/runners-and-adapters.md)
+permettent d'étendre les intégrations. [Licence MIT](LICENSE).

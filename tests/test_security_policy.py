@@ -339,7 +339,7 @@ def test_network_rule_matches_when_the_provider_exposes_a_url():
     assert decision.decision is SecurityDecisionType.BLOCK
 
 
-def test_audit_only_preserves_the_policy_decision():
+def test_legacy_mode_cannot_disable_enforcement():
     settings = parse_security_settings(
         {"mode": "audit_only", "rules": [_rule("deny", "block")]}
     )
@@ -349,13 +349,12 @@ def test_audit_only_preserves_the_policy_decision():
     )
 
     assert decision.decision is SecurityDecisionType.BLOCK
-    assert decision.enforcement_mode is EnforcementMode.AUDIT_ONLY
+    assert decision.enforcement_mode is EnforcementMode.ENFORCE
 
 
 @pytest.mark.parametrize(
     "raw",
     [
-        {"mode": "sometimes"},
         {"rules": "not-a-list"},
         {"rules": [{"id": "x"}]},
         {"rules": [_rule("same", "allow"), _rule("same", "block")]},

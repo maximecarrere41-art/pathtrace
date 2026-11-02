@@ -49,21 +49,16 @@ pathtrace uninstall --framework codex
 pathtrace uninstall --framework claude-code
 ```
 
-Ces commandes retirent les hooks Pathtrace globaux de la machine : Codex dans
-`~/.codex/hooks.json` (ou `CODEX_HOME`) et Claude Code dans
-`~/.claude/settings.json` (ou `CLAUDE_CONFIG_DIR`). Elles affectent donc tous
-les projets locaux qui utilisent Pathtrace avec le framework désinstallé.
-Seuls les hooks gérés par Pathtrace, y compris leurs variantes internes, sont
-retirés ; les hooks et réglages utilisateur sont conservés. La commande peut
-être relancée sans erreur si les hooks sont déjà absents ou partiellement
-retirés.
+Ces commandes désactivent le fournisseur dans le projet courant. Les hooks
+partagés restent installés pour les autres projets. Les règles et le fichier
+`.pathtrace/config.yaml` sont conservés, même après désactivation du dernier
+fournisseur. Les traces, rapports, graphes et campagnes restent présents.
 
-Seule la configuration `.pathtrace/config.yaml` du projet courant est mise à
-jour pour oublier le framework choisi. Si plusieurs frameworks sont activés,
-les autres restent configurés et `features` est recalculé comme leur union.
-Après la désinstallation du dernier framework, seul `config.yaml` est
-supprimé : les traces, rapports, graphes et campagnes historiques ne sont
-jamais supprimés automatiquement.
+Pour supprimer la configuration Security fournisseur depuis n'importe quel dossier,
+ajouter `--scope provider`. Les règles locales restent actives et les hooks partagés
+sont conservés. Ce comportement
+remplace l'ancienne suppression globale des hooks. Voir la
+[référence CLI](cli-reference.md).
 
 ## 2. Utiliser l’agent normalement
 

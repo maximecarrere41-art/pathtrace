@@ -4,6 +4,8 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.test-tmp/
+.validation*/
 .coverage
 htmlcov/
 .venv/

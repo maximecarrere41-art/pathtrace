@@ -8,6 +8,7 @@ from fnmatch import fnmatchcase
 from pathtrace.security.action import (
     canonicalize_filesystem_path,
     canonicalize_git_command,
+    security_action_candidates,
 )
 from pathtrace.security.config import SecuritySettings
 from pathtrace.security.model import (
@@ -31,17 +32,15 @@ class PolicyEngine:
         self.settings = settings
 
     def evaluate(self, action: SecurityAction) -> SecurityDecision:
-        matching = [rule for rule in self.settings.rules if _matches(rule, action)]
+        matching = [(rule, candidate) for candidate in security_action_candidates(action)
+                    for rule in self.settings.rules if _matches(rule, candidate)]
         if not matching:
-            return SecurityDecision(
-                action=action,
-                decision=SecurityDecisionType.ALLOW,
-                enforcement_mode=self.settings.mode,
-            )
-        selected = min(
-            matching,
-            key=lambda rule: (-DECISION_PRIORITY[rule.decision], rule.identifier),
-        )
+            return SecurityDecision(action, SecurityDecisionType.ALLOW, self.settings.mode)
+        selected, candidate = min(matching, key=lambda item: (
+            -DECISION_PRIORITY[item[0].decision], item[0].identifier))
+        return self._matched_decision(candidate, selected)
+
+    def _matched_decision(self, action: SecurityAction, selected: SecurityRule) -> SecurityDecision:
         return SecurityDecision(
             action=action,
             decision=selected.decision,
