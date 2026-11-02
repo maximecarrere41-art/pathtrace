@@ -109,19 +109,15 @@ Voir [Runtime Security et audit des décisions](security.md).
 pathtrace uninstall --framework codex
 ```
 
-La commande retire de la configuration Codex globale à la machine
-(`~/.codex/hooks.json`, ou le répertoire `CODEX_HOME`) uniquement les commandes
-de hooks gérées par Pathtrace, y compris les variantes internes utilisant
-`--configured-only` ou `--security-enabled`. Cette suppression affecte donc
-tous les projets locaux qui utilisent Pathtrace avec Codex. Les hooks et les
-autres réglages Codex de l’utilisateur sont conservés, et une seconde
-désinstallation est sans effet.
+La commande désactive Codex dans le projet courant et conserve les hooks partagés
+dans `~/.codex/hooks.json` (ou `CODEX_HOME`). Elle conserve les règles et le fichier
+projet, y compris lorsque `features` devient vide. Les autres fournisseurs et les
+artefacts historiques restent présents. Répéter la commande est sans effet supplémentaire.
 
-Pathtrace retire également `codex` du `.pathtrace/config.yaml` du projet
-courant. Les autres frameworks restent actifs et l’union `features` est
-recalculée. Si `codex` était le dernier framework, seul le fichier de
-configuration locale est supprimé ; les traces, rapports, graphes et campagnes
-historiques sont conservés.
+`--scope provider` supprime le fichier Security fournisseur depuis n'importe quel
+dossier, sans désactiver les règles locales des projets Codex. Les hooks partagés et les réglages natifs restent
+conservés. Voir la [référence CLI](cli-reference.md) pour le changement
+par rapport à l'ancienne suppression globale des hooks.
 
 ## Propriétés Codex interceptées
 

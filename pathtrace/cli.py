@@ -7,22 +7,15 @@ import sys
 from pathlib import Path
 
 import click
+from click.core import ParameterSource
 
 from pathtrace.adapters import available_adapters, get_adapter
+from pathtrace.activation import install_target, uninstall_target, purge_target
+from pathtrace.status import show_status
 from pathtrace.adapters.base import AdapterInstallError
 from pathtrace.campaign import CampaignError, execute_run_suite, format_campaign
 from pathtrace.capture import safe_fragment
-from pathtrace.config import (
-    CONFIG_PATH,
-    Feature,
-    InstallTarget,
-    ProjectConfigError,
-    load_project_config,
-    prepare_activation,
-    prepare_deactivation,
-    remove_project_config,
-    write_project_config,
-)
+from pathtrace.config import InstallTarget
 from pathtrace.engine.evaluator import evaluate_test_suite
 from pathtrace.engine.loader import (
     PathtraceLoaderError,
@@ -50,83 +43,51 @@ def cli() -> None:
     type=click.Choice([target.value for target in InstallTarget]),
 )
 @click.option("--framework", type=click.Choice(available_adapters()), required=True)
-def install_command(target: str, framework: str) -> None:
-    """Active Observe, Security ou les deux pour le framework choisi."""
+@click.option("--scope", type=click.Choice(["project", "provider"]), default="project", show_default=True)
+@click.option("--presets/--no-presets", default=None, help="Choix explicite des presets à l'initialisation fournisseur.")
+def install_command(target: str, framework: str, scope: str,
+                    presets: bool | None) -> None:
+    """Active Observe, Security ou les deux dans la portée choisie."""
     try:
-        project_dir = Path.cwd()
-        config = prepare_activation(project_dir, InstallTarget(target), framework)
-        framework_features = config.features_for(framework)
-        hook_path = get_adapter(framework).install(project_dir, framework_features)
-        config_path = write_project_config(project_dir, config)
-    except (ValueError, AdapterInstallError, ProjectConfigError) as error:
+        install_target(target, framework, scope, presets)
+    except (ValueError, AdapterInstallError, OSError) as error:
         raise click.ClickException(str(error)) from error
-    enabled = ", ".join(
-        feature.value
-        for feature in sorted(framework_features, key=lambda item: item.value)
-    )
-    click.echo(f"Pathtrace {framework} activé ({enabled}) : {hook_path}")
-    click.echo(f"Configuration locale : {config_path}")
-    if Feature.OBSERVE in config.features:
-        click.echo("Les traces Observe seront écrites dans .pathtrace/traces/")
 
 
 @cli.command("uninstall")
 @click.option("--framework", type=click.Choice(available_adapters()), required=True)
-def uninstall_command(framework: str) -> None:
-    """Désactive Pathtrace pour le framework choisi."""
+@click.option("--scope", type=click.Choice(["project", "provider"]), default="project", show_default=True)
+@click.option("--purge", is_flag=True, help="Retire tous les hooks Pathtrace du fournisseur et sa configuration Security.")
+@click.option("--yes", is_flag=True, help="Confirme --purge sans interaction.")
+def uninstall_command(framework: str, scope: str, purge: bool, yes: bool) -> None:
+    """Désactive une portée ou purge explicitement le fournisseur pour tous les projets."""
     try:
-        project_dir = Path.cwd()
-        config = prepare_deactivation(project_dir, framework)
-        hook_path = get_adapter(framework).uninstall(project_dir)
-        if config is None:
-            config_path = remove_project_config(project_dir)
-        else:
-            config_path = write_project_config(project_dir, config)
-    except (ValueError, AdapterInstallError, ProjectConfigError) as error:
+        _dispatch_uninstall(framework, scope, purge, yes)
+    except (ValueError, AdapterInstallError, OSError) as error:
         raise click.ClickException(str(error)) from error
-    click.echo(f"Hooks Pathtrace {framework} retirés : {hook_path}")
-    if config is None:
-        click.echo(f"Configuration locale retirée : {config_path}")
+
+
+def _dispatch_uninstall(framework: str, scope: str, purge: bool, yes: bool) -> None:
+    if yes and not purge:
+        raise click.UsageError("--yes nécessite --purge")
+    if purge and click.get_current_context().get_parameter_source("scope") is not ParameterSource.DEFAULT:
+        raise click.UsageError("--purge ne se combine pas avec --scope")
+    if purge:
+        purge_target(framework, yes)
     else:
-        click.echo(f"Configuration locale mise à jour : {config_path}")
+        uninstall_target(framework, scope)
 
 
 @cli.command("status")
 def status_command() -> None:
-    """Affiche les capacités activées dans le repository courant."""
+    """Affiche les fonctionnalités, règles, modes et télémétrie par portée."""
     try:
-        config = load_project_config(Path.cwd())
-    except ProjectConfigError as error:
+        show_status()
+    except (ValueError, OSError) as error:
         raise click.ClickException(str(error)) from error
-    features = ", ".join(
-        feature.value
-        for feature in sorted(config.features, key=lambda item: item.value)
-    )
-    click.echo(f"Features: {features}")
-    location = Path.cwd() / CONFIG_PATH if config.explicit else "legacy defaults"
-    click.echo(f"Configuration: {location}")
-    if config.frameworks:
-        for framework, enabled in sorted(config.frameworks.items()):
-            names = ", ".join(
-                feature.value for feature in sorted(enabled, key=lambda item: item.value)
-            )
-            click.echo(f"Framework {framework}: {names}")
-    if Feature.SECURITY in config.features:
-        security = config.security or {}
-        telemetry = security.get("telemetry")
-        telemetry_enabled = (
-            isinstance(telemetry, dict) and telemetry.get("enabled") is True
-        )
-        click.echo(f"Security mode: {security.get('mode', 'enforce')}")
-        endpoint = telemetry.get("otlp_endpoint") if isinstance(telemetry, dict) else None
-        if telemetry_enabled and not endpoint:
-            telemetry_status = "enabled (inactive: missing OTLP endpoint)"
-        else:
-            telemetry_status = "enabled" if telemetry_enabled else "disabled"
-        click.echo(f"Security telemetry: {telemetry_status}")
 
 
-@cli.group("hook")
+@cli.group("hook", hidden=True)
 def hook_group() -> None:
     """Commandes internes appelées par les hooks des agents."""
 

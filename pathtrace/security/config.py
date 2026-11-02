@@ -36,7 +36,7 @@ class SecuritySettings:
 def parse_security_settings(raw: dict[str, Any] | None) -> SecuritySettings:
     value = raw or {}
     _reject_unknown(value, {"mode", "rules", "telemetry"}, "security")
-    mode = _enum(EnforcementMode, value.get("mode", "enforce"), "security.mode")
+    mode = EnforcementMode.ENFORCE
 
     raw_rules = value.get("rules", [])
     if not isinstance(raw_rules, list):

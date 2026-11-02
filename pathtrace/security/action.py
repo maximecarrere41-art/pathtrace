@@ -7,10 +7,12 @@ import os
 import posixpath
 import re
 import shlex
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from pathtrace.security.model import SecurityAction, SecurityActionType
+from pathtrace.security.commands import split_shell_commands
 
 
 GIT_COMMAND = re.compile(r"git(?:\.exe)?(?=\s|$|[\"'])", re.IGNORECASE)
@@ -33,6 +35,7 @@ WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
 SHELL_TOOLS = {
     "bash",
     "cmd",
+    "exec_command",
     "powershell",
     "shell",
     "shell_command",
@@ -87,7 +90,7 @@ def build_security_action(
     mcp_server = _mcp_server(tool)
     git_command = _git_command(command) if _is_shell_tool(tool) else None
     action_type = _action_type(tool, command, resource, mcp_server, git_command)
-    if action_type is SecurityActionType.GIT:
+    if action_type is SecurityActionType.GIT and len(split_shell_commands(command or "")) == 1:
         command = canonicalize_git_command(git_command or "", cwd)
     if action_type is SecurityActionType.FILESYSTEM:
         resource = canonicalize_filesystem_path(resource or "", cwd)
@@ -103,6 +106,22 @@ def build_security_action(
         mcp_server=mcp_server,
         cwd=cwd,
     )
+
+
+def security_action_candidates(action: SecurityAction) -> tuple[SecurityAction, ...]:
+    if action.action_type not in {SecurityActionType.SHELL, SecurityActionType.GIT}:
+        return (action,)
+    commands = split_shell_commands(action.command or "")
+    if len(commands) <= 1:
+        return (action,)
+    return (*(_command_action(action, command) for command in commands), action)
+
+
+def _command_action(action: SecurityAction, command: str) -> SecurityAction:
+    git = _git_command(command)
+    action_type = SecurityActionType.GIT if git else SecurityActionType.SHELL
+    normalized = canonicalize_git_command(command, action.cwd) if git else command
+    return replace(action, action_type=action_type, command=normalized)
 
 
 def _action_type(

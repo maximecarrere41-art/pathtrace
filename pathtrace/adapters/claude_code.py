@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import uuid
 from pathlib import Path
@@ -16,6 +15,7 @@ from pathtrace.adapters.base import (
 )
 from pathtrace.capture import CaptureStore, safe_fragment
 from pathtrace.config import Feature
+from pathtrace.provider_paths import provider_home
 from pathtrace.model import build_trace, utc_now
 from pathtrace.security.action import build_security_action
 from pathtrace.security.model import (
@@ -58,10 +58,7 @@ class PathtraceClaudeHookConfigError(AdapterInstallError):
 
 
 def _claude_home() -> Path:
-    configured_home = os.getenv("CLAUDE_CONFIG_DIR")
-    if configured_home:
-        return Path(configured_home).expanduser()
-    return Path.home() / ".claude"
+    return provider_home("claude-code")
 
 
 class ClaudeCodeAdapter(FrameworkAdapter):

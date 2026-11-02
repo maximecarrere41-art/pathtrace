@@ -205,8 +205,8 @@ def _ordered_features(features: Iterable[Feature]) -> list[str]:
 
 
 def _parse_features(raw: Any, field: str) -> frozenset[Feature]:
-    if not isinstance(raw, list) or not raw:
-        raise ProjectConfigError(f"{field} doit être une liste non vide")
+    if not isinstance(raw, list):
+        raise ProjectConfigError(f"{field} doit être une liste")
     try:
         return frozenset(Feature(item) for item in raw)
     except (TypeError, ValueError) as error:

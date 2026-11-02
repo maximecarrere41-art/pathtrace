@@ -14,7 +14,7 @@ FRAMEWORKS = (
 
 
 @pytest.mark.parametrize(("framework", "home_env", "settings_name"), FRAMEWORKS)
-def test_install_then_uninstall_removes_pathtrace_hooks_and_local_config(
+def test_install_then_uninstall_disables_project_and_keeps_shared_hooks(
     framework,
     home_env,
     settings_name,
@@ -43,8 +43,13 @@ def test_install_then_uninstall_removes_pathtrace_hooks_and_local_config(
     settings = json.loads(
         (agent_home / settings_name).read_text(encoding="utf-8")
     )
-    assert "hooks" not in settings
-    assert not (tmp_path / ".pathtrace" / "config.yaml").exists()
+    assert "hooks" in settings
+    config = yaml.safe_load((tmp_path / ".pathtrace" / "config.yaml").read_text(encoding="utf-8"))
+    assert config["features"] == []
+    assert config["frameworks"] == {}
+    received = runner.invoke(cli, ["hook", "receive", framework, "pre-tool-use"], input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "echo test"}}))
+    assert received.exit_code == 0
+    assert received.output == ""
     assert all(artifact.is_file() for artifact in historical_artifacts)
 
 
@@ -142,25 +147,14 @@ def test_uninstall_preserves_user_hooks_and_provider_configuration(
     monkeypatch.setenv(home_env, str(agent_home))
     monkeypatch.chdir(tmp_path)
 
+    before = settings_path.read_text(encoding="utf-8")
     result = CliRunner().invoke(cli, ["uninstall", "--framework", framework])
 
     assert result.exit_code == 0, result.output
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     assert settings["theme"] == "dark"
-    assert settings["hooks"] == {
-        "PreToolUse": [
-            {
-                "matcher": "Bash",
-                "hooks": [{"type": "command", "command": "user-pre-hook"}],
-            }
-        ],
-        "CustomEvent": [
-            {
-                "matcher": "*",
-                "hooks": [{"type": "command", "command": "user-custom-hook"}],
-            }
-        ],
-    }
+    assert settings_path.read_text(encoding="utf-8") == before
+
 
 
 def test_uninstall_one_framework_recalculates_features_and_keeps_the_other(
@@ -186,8 +180,9 @@ def test_uninstall_one_framework_recalculates_features_and_keeps_the_other(
         "version": 1,
         "features": ["observe"],
         "frameworks": {"claude-code": ["observe"]},
+        "security": {"mode": "enforce", "rules": [], "telemetry": {"enabled": False}},
     }
-    assert "hooks" not in json.loads(
+    assert "hooks" in json.loads(
         (codex_home / "hooks.json").read_text(encoding="utf-8")
     )
     claude_hooks = json.loads(
@@ -237,9 +232,8 @@ def test_uninstall_removes_all_current_internal_hook_flag_variants(
     monkeypatch.setenv(home_env, str(agent_home))
     monkeypatch.chdir(tmp_path)
 
-    result = CliRunner().invoke(cli, ["uninstall", "--framework", framework])
-
-    assert result.exit_code == 0, result.output
+    from pathtrace.adapters import get_adapter
+    get_adapter(framework).uninstall(tmp_path)
     remaining = json.loads(settings_path.read_text(encoding="utf-8"))["hooks"]
     assert remaining["PreToolUse"][0]["hooks"] == [
         {"type": "command", "command": "user-hook"}

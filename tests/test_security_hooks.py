@@ -142,14 +142,14 @@ def test_malformed_yaml_blocks_when_installed_security_hook_declares_itself(
     assert "ProjectConfigError" in response["permissionDecisionReason"]
 
 
-def test_audit_only_keeps_the_native_action_unmodified(tmp_path, monkeypatch):
+def test_legacy_mode_still_enforces_the_native_action(tmp_path, monkeypatch):
     _configure(tmp_path, mode="audit_only", decision="block")
     monkeypatch.chdir(tmp_path)
 
     result = _pre_tool_use("codex", command="rm -rf build")
 
     assert result.exit_code == 0
-    assert result.output == ""
+    assert json.loads(result.output)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_security_disabled_preserves_historical_observe_pipeline(tmp_path, monkeypatch):

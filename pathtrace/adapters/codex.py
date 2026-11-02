@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any, Iterable
@@ -15,6 +14,7 @@ from pathtrace.adapters.base import (
 )
 from pathtrace.capture import CaptureStore, safe_fragment
 from pathtrace.config import Feature
+from pathtrace.provider_paths import provider_home
 from pathtrace.model import build_trace, utc_now
 from pathtrace.security.action import build_security_action
 from pathtrace.security.model import (
@@ -40,11 +40,7 @@ class PathtraceHookConfigError(AdapterInstallError):
 
 
 def _codex_home() -> Path:
-    """Retourne le répertoire global utilisé par Codex."""
-    configured_home = os.getenv("CODEX_HOME")
-    if configured_home:
-        return Path(configured_home).expanduser()
-    return Path.home() / ".codex"
+    return provider_home("codex")
 
 
 class CodexAdapter(FrameworkAdapter):
@@ -266,18 +262,15 @@ def _remove_managed_hooks(hooks: dict[str, Any], config_path: Path) -> bool:
 
 
 def _is_managed_hook(hook: Any, event_name: str) -> bool:
-    if not isinstance(hook, dict):
+    if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
         return False
-    command = hook.get("command")
-    if not isinstance(command, str):
-        return False
+    command_parts = hook["command"].split()
+    if command_parts[:3] == ["pathtrace", "hook", "codex"]:
+        command_parts.insert(2, "receive")
     base_parts = f"{HOOK_COMMAND_PREFIX} {EVENT_SLUGS[event_name]}".split()
-    command_parts = command.split()
-    flags = command_parts[len(base_parts) :]
-    return (
-        command_parts[: len(base_parts)] == base_parts
-        and all(flag in {"--configured-only", "--security-enabled"} for flag in flags)
-    )
+    return (command_parts[:len(base_parts)] == base_parts
+            and all(flag in {"--configured-only", "--security-enabled"}
+                    for flag in command_parts[len(base_parts):]))
 
 
 def _to_event(payload: dict[str, Any], hook: str) -> dict[str, Any] | None:
